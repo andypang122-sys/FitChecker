@@ -1,0 +1,6 @@
+# Keep the moderation key and community data out of source control.
+data/
+__pycache__/
+*.pyc
+.DS_Store
+*.tmp

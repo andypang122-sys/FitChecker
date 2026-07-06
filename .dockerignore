@@ -1,0 +1,7 @@
+# Never bake local data (dev admin key, test outfits) into the image —
+# production uses the /data volume instead.
+data/
+__pycache__/
+*.pyc
+.git/
+.DS_Store

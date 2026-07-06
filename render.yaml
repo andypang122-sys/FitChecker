@@ -1,0 +1,16 @@
+# Render Blueprint — optional one-click deploy config.
+# Render also auto-detects the Dockerfile if you create the web service by hand
+# in the dashboard, so this file is a convenience, not a requirement.
+#
+# To go live: push this repo to GitHub → render.com → New → Blueprint → pick the
+# repo. Render builds the Dockerfile, generates a secure moderation key, and gives
+# you an https URL.
+services:
+  - type: web
+    name: fitcheck
+    runtime: docker
+    plan: free            # change to "starter" ($7/mo) for always-on, no cold starts
+    healthCheckPath: /
+    envVars:
+      - key: FITCHECK_ADMIN_KEY
+        generateValue: true   # Render creates a secure random key (view it in the dashboard)
