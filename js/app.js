@@ -45,6 +45,8 @@
     setTimeout(() => el.classList.add('leaving'), 2800);
     setTimeout(() => el.remove(), 3200);
   }
+  // let the shared Money module reuse these
+  window.__esc = esc; window.__toast = toast;
 
   function openModal(html) {
     const root = document.getElementById('modal-root');
@@ -135,8 +137,10 @@
     profiles: renderProfiles,
     history: renderHistory,
     foryou: renderForYou,
+    colours: renderColours,
     outfits: renderOutfits,
     moderate: renderModerate, // hidden admin page — not in the nav
+    dashboard: renderDashboard,
     settings: renderSettings,
     help: renderHelp,
     login: renderAuth
@@ -371,6 +375,7 @@
           <h2>Know your fit before you buy</h2>
           <p>Type your measurements, pick a garment, and get a size verdict in 30 seconds — no account needed.</p>
           <a href="#/analyze" class="btn btn-lg">Try a fit check</a>
+          <div style="margin-top:12px">${Money.creditsBadgeHTML()}</div>
         </div>
 
         ${promoCard('Create a free account to save your measurements, use the camera, add photos and keep your fit-check history.')}
@@ -382,8 +387,11 @@
             <div class="zone-card"><span class="zone-dot" style="background:var(--primary)"></span><div class="zone-body"><div class="zone-name">2 · Pick the garment</div><div class="zone-msg">Choose the type and the fit you like — slim, regular or relaxed.</div></div></div>
             <div class="zone-card"><span class="zone-dot" style="background:var(--primary)"></span><div class="zone-body"><div class="zone-name">3 · Get your verdict</div><div class="zone-msg">FitCheck scores every size, flags what's too tight, loose, short or long — and tells you the best size to buy.</div></div></div>
           </div>
-        </div>`;
+        </div>
+
+        ${Money.bannerHTML('home')}`;
       wirePromo();
+      Money.wireAds(view);
       return;
     }
 
@@ -400,6 +408,7 @@
           ? `Ready to check a garment against <strong>${esc(active.name)}</strong>?`
           : 'Start by creating a body profile with your measurements.'}</p>
         <a href="#/${active ? 'analyze' : 'profiles'}" class="btn btn-lg">${active ? 'Check a fit' : 'Create my profile'}</a>
+        <div style="margin-top:12px">${Money.creditsBadgeHTML()}</div>
       </div>
 
       <div class="stat-row">
@@ -417,9 +426,12 @@
           <p>Run your first garment past the tape — a verdict takes half a minute.</p>
           <a href="#/analyze" class="btn btn-primary">Start a fitting</a>
         </div>`}
-      </div>`;
+      </div>
+
+      ${Money.bannerHTML('home')}`;
 
     wireAnalysisRows();
+    Money.wireAds(view);
   }
 
   function analysisRow(a) {
@@ -685,6 +697,9 @@
   function renderAnalyze() {
     const u = Auth.user();
 
+    // gate a fresh fit check when the daily free limit is spent
+    if (!wiz && !Money.canUse()) { renderAnalyzeLocked(); return; }
+
     if (!wiz) {
       // If the user arrived via the share sheet, a product link is waiting.
       let sharedUrl = '';
@@ -710,6 +725,21 @@
     } else {
       renderWizStep2();
     }
+  }
+
+  function renderAnalyzeLocked() {
+    const c = Money.config();
+    const view = document.getElementById('view');
+    view.innerHTML = `<div class="empty">
+      <div class="empty-emoji">👕</div>
+      <h3>That's your ${c.freePerDay} free fit checks for today</h3>
+      <p>Come back tomorrow for ${c.freePerDay} more, watch a short ad to unlock one now, or go unlimited with ${esc(c.proName)}.</p>
+      <div class="btn-row" style="justify-content:center;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn btn-primary" id="ql-more">Unlock one more</button>
+        <a class="btn btn-ghost" href="#/home">Back home</a>
+      </div></div>`;
+    document.getElementById('ql-more').onclick = () => Money.showPaywall(() => render());
+    Money.showPaywall(() => render());
   }
 
   function stepsBar(step) {
@@ -1012,8 +1042,11 @@
       profileId = null;
     }
 
+    if (!Money.canUse()) { Money.showPaywall(() => render()); return; }
     const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, wiz.customChart);
     if (!result) { toast('Could not analyze this garment.', 'err'); return; }
+    Money.consume(); // a fit check was produced
+    Store.recordResponse({ garmentType: wiz.garmentType, fitPref: wiz.fitPref, pickedSize: wiz.pickedSize || '', newSex: wiz.newSex });
 
     const analysis = {
       id: u ? Store.uid() : 'guest',
@@ -1237,9 +1270,12 @@
         <button class="btn btn-primary btn-lg" id="res-again">Check another garment</button>
         ${isGuest ? '' : '<button class="btn btn-secondary" id="res-history">View history</button>'}
         ${isGuest ? '' : '<button class="btn btn-danger btn-sm" id="res-delete" style="margin-left:auto">Delete</button>'}
-      </div>`;
+      </div>
+
+      ${Money.bannerHTML('content')}`;
 
     wirePromo();
+    Money.wireAds(view);
 
     // animate ring + count the number up
     requestAnimationFrame(() => {
@@ -1413,6 +1449,163 @@
       </div></div>`}
 
       <p class="disclosure">Some links may earn FitCheck a small commission. It never changes what's recommended.</p>`;
+  }
+
+  /* ==========================================================
+     COLOURS — personal colour analysis (on-device, from a selfie)
+     ========================================================== */
+
+  function colourKey() {
+    const p = getActiveProfile();
+    return 'fc_colour_' + ((p && p.id) || 'guest');
+  }
+  function loadColour() {
+    try { return JSON.parse(localStorage.getItem(colourKey()) || 'null'); } catch (e) { return null; }
+  }
+  function saveColour(res) {
+    try { localStorage.setItem(colourKey(), JSON.stringify(res)); } catch (e) {}
+  }
+
+  function swatchRow(list) {
+    return `<div class="swatch-row">${list.map(s =>
+      `<div class="swatch"><span class="sw-chip" style="background:${esc(s.hex)}"></span><span class="sw-name">${esc(s.name)}</span></div>`
+    ).join('')}</div>`;
+  }
+
+  function colourResultCard(res) {
+    return `
+      <div class="card">
+        <div class="colour-head">
+          ${res.skinHex ? `<span class="skin-dot" style="background:${esc(res.skinHex)}" title="Detected skin tone"></span>` : ''}
+          <div>
+            <div class="card-title" style="margin:0">${esc(res.season)}</div>
+            <div class="muted small">${esc(res.tone)}${(res.confidence != null && !res.refined) ? ` · ${Math.round(res.confidence * 100)}% photo confidence` : ''}</div>
+          </div>
+        </div>
+        <p class="muted small mb-16">${esc(res.why)}</p>
+
+        <div class="section-label">Wear these — they flatter you</div>
+        ${swatchRow(res.wear)}
+
+        <div class="section-label">Your best neutrals</div>
+        ${swatchRow(res.neutrals)}
+
+        <div class="section-label">Go easy on these</div>
+        ${swatchRow(res.avoid)}
+
+        <div class="btn-row mt-16">
+          <button class="btn btn-secondary" id="col-refine">Refine undertone</button>
+          <button class="btn btn-ghost" id="col-redo">Start over</button>
+        </div>
+      </div>`;
+  }
+
+  function wireColourResult(res) {
+    const refine = document.getElementById('col-refine');
+    const redo = document.getElementById('col-redo');
+    if (refine) refine.onclick = () => refineColourFlow(res);
+    if (redo) redo.onclick = () => {
+      try { localStorage.removeItem(colourKey()); } catch (e) {}
+      renderColours();
+    };
+  }
+
+  function startColourFlow() {
+    Camera.pickImage({
+      onImage: dataUrl => {
+        const box = document.getElementById('col-result');
+        if (box) box.innerHTML = '<div class="card"><div class="empty"><p>Reading your colouring…</p></div></div>';
+        ColourAI.analyze(dataUrl, res => {
+          if (!res) {
+            if (box) box.innerHTML = '';
+            toast('Could not read skin tone from that photo — try a clearer, well-lit selfie.', 'err');
+            return;
+          }
+          saveColour(res);
+          if (box) { box.innerHTML = colourResultCard(res); wireColourResult(res); }
+          if (res.confidence < 0.4) toast('The light made this a rough estimate — tap "Refine undertone" to confirm.', 'ok');
+        });
+      },
+      onError: msg => toast(msg, 'err')
+    });
+  }
+
+  // Photo light lies — three physical checks pin down the undertone reliably.
+  function refineColourFlow(res) {
+    const overlay = openModal(`
+      <h3 class="card-title">Confirm your undertone</h3>
+      <p class="muted small mb-16">Cameras and lighting can mislead — these three checks are more reliable than any photo.</p>
+
+      <div class="section-label">The veins on your inner wrist look…</div>
+      <div class="chip-row mb-16" id="q-veins">
+        <button class="chip" data-v="cool">Blue / purple</button>
+        <button class="chip" data-v="warm">Green</button>
+        <button class="chip" data-v="neutral">Hard to tell</button>
+      </div>
+
+      <div class="section-label">Which metal suits you better?</div>
+      <div class="chip-row mb-16" id="q-metal">
+        <button class="chip" data-v="cool">Silver</button>
+        <button class="chip" data-v="warm">Gold</button>
+        <button class="chip" data-v="neutral">Both look fine</button>
+      </div>
+
+      <div class="section-label">In the sun your skin usually…</div>
+      <div class="chip-row mb-16" id="q-sun">
+        <button class="chip" data-v="cool">Burns, rarely tans</button>
+        <button class="chip" data-v="warm">Tans easily</button>
+        <button class="chip" data-v="neutral">A bit of both</button>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="q-cancel">Cancel</button>
+        <button class="btn btn-primary" id="q-apply" disabled>Update my palette</button>
+      </div>`);
+
+    const answers = { veins: null, metal: null, sun: null };
+    ['veins', 'metal', 'sun'].forEach(gid => {
+      const row = overlay.querySelector('#q-' + gid);
+      row.onclick = e => {
+        const c = e.target.closest('[data-v]');
+        if (!c) return;
+        row.querySelectorAll('.chip').forEach(x => x.classList.remove('selected'));
+        c.classList.add('selected');
+        answers[gid] = c.getAttribute('data-v');
+        overlay.querySelector('#q-apply').disabled = !(answers.veins && answers.metal && answers.sun);
+      };
+    });
+
+    overlay.querySelector('#q-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('#q-apply').onclick = () => {
+      let warm = 0, cool = 0;
+      Object.keys(answers).forEach(g => {
+        if (answers[g] === 'warm') warm++; else if (answers[g] === 'cool') cool++;
+      });
+      const undertone = warm > cool ? 'warm' : cool > warm ? 'cool' : 'neutral';
+      const next = ColourAI.fromChoice(undertone, res.depth, res.skinHex);
+      Store.recordResponse({ veins: answers.veins, metal: answers.metal, sun: answers.sun, _colour: true });
+      saveColour(next);
+      overlay.remove();
+      renderColours();
+      toast('Palette updated to ' + next.season + '.', 'ok');
+    };
+  }
+
+  function renderColours() {
+    const saved = loadColour();
+    const active = getActiveProfile();
+    const whose = active ? esc(active.name) : 'you';
+
+    view.innerHTML = `
+      <div class="card">
+        <h2 class="mb-8">Your colours</h2>
+        <p class="muted small mb-16">FitCheck reads your skin tone from a selfie — entirely on your device, nothing is uploaded — and finds the colours that flatter ${whose} most. Works best in soft, natural daylight with no filter.</p>
+        <button class="btn btn-primary" id="col-start">${saved ? 'Analyse a new photo' : 'Analyse my colours'}</button>
+      </div>
+      <div id="col-result">${saved ? colourResultCard(saved) : ''}</div>`;
+
+    document.getElementById('col-start').onclick = startColourFlow;
+    if (saved) wireColourResult(saved);
   }
 
   /* ==========================================================
@@ -1803,6 +1996,14 @@
   }
 
   /* ==========================================================
+     ANALYTICS DASHBOARD
+     ========================================================== */
+
+  function renderDashboard() {
+    view.innerHTML = Dashboard.renderDashboard(Store.getResponses());
+  }
+
+  /* ==========================================================
      SETTINGS
      ========================================================== */
 
@@ -1810,6 +2011,7 @@
     const u = Auth.user();
 
     view.innerHTML = `
+      ${Money.proCardHTML()}
       <div class="card">
         <div class="card-title">Account</div>
         ${u ? `
@@ -1848,6 +2050,18 @@
       </div>
 
       <div class="card">
+        <div class="card-title">For you</div>
+        <a class="list-row" href="#/dashboard">
+          <span class="row-thumb">📊</span>
+          <span class="row-main">
+            <span class="title">Analytics</span>
+            <span class="sub">See which fit preferences and colours matter most to our users</span>
+          </span>
+          <span class="rec-arrow">→</span>
+        </a>
+      </div>
+
+      <div class="card">
         <div class="card-title">Install FitCheck</div>
         ${(!isStandalone() && deferredInstallPrompt) ? '<button class="btn btn-primary mb-16" id="st-install">Install now</button>' : ''}
         <p class="muted small">FitCheck works as an app on your phone:</p>
@@ -1879,6 +2093,8 @@
 
     const stInstall = document.getElementById('st-install');
     if (stInstall) stInstall.onclick = () => triggerInstall(null);
+
+    Money.wireProCard(view);
 
     if (!u) return;
 

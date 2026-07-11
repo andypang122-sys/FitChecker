@@ -4,19 +4,22 @@
    online, fall back to the cache only when offline. This prevents
    stale layouts/JS from being served after an update. */
 
-const CACHE = 'fitcheck-v27';
+const CACHE = 'fitcheck-v30';
 const ASSETS = [
   '.',
   'index.html',
-  'css/styles.css?v=27',
-  'js/i18n.js?v=27',
-  'js/storage.js?v=27',
-  'js/auth.js?v=27',
-  'js/fit-engine.js?v=27',
-  'js/camera.js?v=27',
-  'js/recs.js?v=27',
-  'js/style-ai.js?v=27',
-  'js/app.js?v=27',
+  'css/styles.css?v=30',
+  'js/i18n.js?v=30',
+  'js/storage.js?v=30',
+  'js/auth.js?v=30',
+  'js/fit-engine.js?v=30',
+  'js/camera.js?v=30',
+  'js/recs.js?v=30',
+  'js/style-ai.js?v=30',
+  'js/colour-ai.js?v=30',
+  'js/monetize.js?v=30',
+  'js/analytics.js?v=30',
+  'js/app.js?v=30',
   'manifest.json',
   'icon.svg',
   'icons/icon-192.png',

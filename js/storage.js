@@ -76,6 +76,7 @@ const Store = (() => {
 
   const GUEST_KEY = 'fitcheck_guest_prefs';
   const GUEST_BODY_KEY = 'fitcheck_guest_body';
+  const RESPONSES_KEY = 'fitcheck_responses';
 
   function getGuestPrefs() {
     return read(GUEST_KEY, { units: 'cm' });
@@ -95,11 +96,22 @@ const Store = (() => {
     try { write(GUEST_BODY_KEY, body); } catch (e) { /* quota — skip */ }
   }
 
+  /* ---------- analytics response tracking ---------- */
+  function getResponses() {
+    return read(RESPONSES_KEY, []);
+  }
+
+  function recordResponse(answers) {
+    const list = getResponses();
+    list.push({ id: uid(), ts: Date.now(), answers });
+    try { write(RESPONSES_KEY, list); } catch (e) { /* quota — skip */ }
+  }
+
   /* ---------- ids ---------- */
 
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
-  return { getUsers, getUser, saveUser, deleteUser, getSession, setSession, clearSession, getGuestPrefs, saveGuestPrefs, getGuestBody, saveGuestBody, uid };
+  return { getUsers, getUser, saveUser, deleteUser, getSession, setSession, clearSession, getGuestPrefs, saveGuestPrefs, getGuestBody, saveGuestBody, getResponses, recordResponse, uid };
 })();
