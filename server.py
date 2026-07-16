@@ -898,6 +898,15 @@ _WARDROBE_LOCK = threading.Lock()
 
 TOKEN_TTL = 90 * 24 * 3600          # 90 days
 MAX_WARDROBE_ITEMS = 600            # generous fair-use ceiling per account
+
+# The wardrobe is the only unbounded thing users can push, and it shares ONE
+# disk with every other account, so it needs a byte ceiling and not just an
+# item count. The client compresses every photo to WebP ~1024px/0.82 (~150KB),
+# so these limits are several times looser than the app itself can produce —
+# they exist to bound a buggy client or a hand-crafted API call, either of
+# which could otherwise fill the disk and take every account down with it.
+MAX_WARDROBE_IMAGE_CHARS = 600_000    # ~450KB photo — 3x the app's own output
+MAX_WARDROBE_BYTES = 150_000_000      # ~150MB of photos per account
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -1040,7 +1049,7 @@ def _clean_item(it):
     if not isinstance(it, dict) or not it.get("id"):
         return None
     img = it.get("img") or ""
-    if not isinstance(img, str) or len(img) > MAX_IMAGE_CHARS:
+    if not isinstance(img, str) or len(img) > MAX_WARDROBE_IMAGE_CHARS:
         return None
     return {
         "id": str(it["id"])[:64],
@@ -1062,14 +1071,26 @@ def wardrobe_put_item(body):
     email = _resolve_token(body.get("token"))
     if not email:
         return {"ok": False, "error": "auth"}
-    item = _clean_item(body.get("item"))
+    raw = body.get("item")
+    # Checked before _clean_item so an oversized photo gets a message the user
+    # can act on rather than a flat "Bad item."
+    if isinstance(raw, dict) and isinstance(raw.get("img"), str) \
+            and len(raw["img"]) > MAX_WARDROBE_IMAGE_CHARS:
+        return {"ok": False, "error": "That photo is too large — try adding it again."}
+    item = _clean_item(raw)
     if not item:
         return {"ok": False, "error": "Bad item."}
     with _WARDROBE_LOCK:
         d = _load_wardrobe(email)
+        # excludes the item being replaced, so re-saving an item doesn't
+        # count its old photo against the budget twice
         items = [x for x in d["items"] if x.get("id") != item["id"]]
         if len(items) >= MAX_WARDROBE_ITEMS:
             return {"ok": False, "error": "Wardrobe is full (%d items)." % MAX_WARDROBE_ITEMS}
+        used = sum(len(x.get("img") or "") for x in items)
+        if used + len(item["img"]) > MAX_WARDROBE_BYTES:
+            return {"ok": False,
+                    "error": "Your wardrobe has reached its photo storage limit."}
         items.append(item)
         d["items"] = items
         _save_wardrobe(email, d)
