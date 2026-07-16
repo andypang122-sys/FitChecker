@@ -15,10 +15,21 @@
      fits   — optional: only show for these fit prefs
               ['slim','regular','relaxed']; omit for all
      url    — the plain link
+     img    — OPTIONAL real product photo (the brand's own image).
+              How to get it: open the product on the brand's site in
+              your browser, right-click the product photo → "Copy
+              image address" → paste here. Shown instead of the
+              coloured garment tile; if it ever breaks, the app
+              falls back automatically. Affiliate networks also
+              provide these URLs in their product feeds.
      aff    — OPTIONAL affiliate link. When you get approved by a
               network (Awin, Adtraction, Tradedoubler, Amazon…),
               paste the tracking link here — it is used instead of
               url automatically. Leave '' until then.
+
+   NOTE: most retail sites bot-block automated scraping, so FitCheck
+   cannot fetch these photos by itself for category links — but any
+   image URL you paste from your own browser will load fine.
 
    Legal note: when any aff link is active, the disclosure line on
    the For You page is required (FTC / EU rules). It renders
@@ -30,7 +41,8 @@ const RECS = [
   { brand: 'Uniqlo', name: 'AIRism Cotton Oversized Tee', note: 'The boxy staple — half sizes of ease built in, breathes well.',
     types: ['tshirt'], fits: ['relaxed'], url: 'https://www.uniqlo.com/se/en/men/tops/t-shirts', aff: '' },
   { brand: 'Uniqlo', name: 'Supima Cotton Crew Neck', note: 'A clean regular-fit tee that holds its shape wash after wash.',
-    types: ['tshirt'], url: 'https://www.uniqlo.com/se/en/men/tops/t-shirts', aff: '' },
+    types: ['tshirt'], url: 'https://www.uniqlo.com/se/en/men/tops/t-shirts',
+    img: 'https://image.uniqlo.com/UQ/ST3/eu/imagesgoods/455365/item/eugoods_17_455365_3x4.jpg', aff: '' },
   { brand: 'Weekday', name: 'Relaxed & standard tees', note: 'Scandi cuts with honest sizing — good between-size options.',
     types: ['tshirt'], url: 'https://www.weekday.com/en-se/c/men/t-shirts-tops/', aff: '' },
   { brand: 'ASOS', name: 'T-shirt edit — all fits', note: 'Huge range with fit filters: slim, regular, oversized in one place.',

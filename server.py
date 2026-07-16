@@ -18,12 +18,15 @@ normalises everything to centimetres and returns JSON:
 """
 
 import functools
+import hashlib
 import json
 import os
 import re
+import secrets
 import ssl
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -421,8 +424,10 @@ def translate_many(texts, to):
 # by setting FITCHECK_DATA_DIR; locally it defaults to ./data next to this file.
 DATA_DIR = os.environ.get("FITCHECK_DATA_DIR") or os.path.join(BASE_DIR, "data")
 OUTFITS_FILE = os.path.join(DATA_DIR, "outfits.json")
+BATTLES_FILE = os.path.join(DATA_DIR, "battles.json")
 ADMIN_KEY_FILE = os.path.join(DATA_DIR, "admin_key.txt")
 _OUTFITS_LOCK = threading.Lock()
+_BATTLES_LOCK = threading.Lock()
 MAX_IMAGE_CHARS = 2_000_000   # ~1.5MB image as data URL
 MAX_PENDING = 100
 
@@ -468,7 +473,47 @@ def _save_outfits(posts):
 def outfits_public():
     posts = [p for p in _load_outfits() if p.get("status") == "approved"]
     posts.sort(key=lambda p: p.get("ts", 0), reverse=True)
-    return {"ok": True, "posts": posts}
+    # Never expose the per-voter map; send only the aggregate counts.
+    clean = []
+    for p in posts:
+        q = {k: v for k, v in p.items() if k != "voters"}
+        q["likes"] = int(p.get("likes") or 0)
+        q["dislikes"] = int(p.get("dislikes") or 0)
+        clean.append(q)
+    return {"ok": True, "posts": clean}
+
+
+def outfits_vote(body):
+    """Like / dislike a live post. One vote per stable poster id (uid);
+    sending the same vote again clears it (toggle), 'none' clears it too."""
+    pid = body.get("id")
+    uid = str(body.get("uid") or "")[:64].strip()
+    vote = body.get("vote")
+    if vote not in ("like", "dislike", "none"):
+        return {"ok": False, "error": "Unknown vote."}
+    if not uid:
+        return {"ok": False, "error": "Sign in to vote."}
+    with _OUTFITS_LOCK:
+        posts = _load_outfits()
+        target = next((p for p in posts if p.get("id") == pid), None)
+        if not target or target.get("status") != "approved":
+            return {"ok": False, "error": "Post not found."}
+        voters = target.get("voters")
+        if not isinstance(voters, dict):
+            voters = {}
+        if vote == "none":
+            voters.pop(uid, None)
+            you = None
+        else:
+            voters[uid] = vote
+            you = vote
+        target["voters"] = voters
+        likes = sum(1 for v in voters.values() if v == "like")
+        dislikes = sum(1 for v in voters.values() if v == "dislike")
+        target["likes"] = likes
+        target["dislikes"] = dislikes
+        _save_outfits(posts)
+    return {"ok": True, "likes": likes, "dislikes": dislikes, "you": you}
 
 
 def outfits_pending(key):
@@ -564,6 +609,594 @@ def outfits_report(body):
 
 
 # ---------------------------------------------------------------
+# brand product thumbnails — the image each brand page advertises
+# (its og:image), fetched server-side once and cached on disk.
+# The client shows it over the garment tile; if a brand blocks us
+# or we're offline, the tile stays. Allowlisted hosts only (SSRF).
+# ---------------------------------------------------------------
+
+THUMBS_DIR = os.path.join(DATA_DIR, "thumbs")
+THUMB_HOSTS = (
+    "uniqlo.com", "hm.com", "weekday.com", "asos.com", "zalando.se",
+    "zalando.com", "levi.com", "lacoste.com", "massimodutti.com",
+    "stories.com", "monki.com",
+)
+THUMB_RETRY_SECONDS = 6 * 3600  # re-try a failed brand after 6h
+_THUMB_LOCK = threading.Lock()
+
+_OG_IMG_RE = re.compile(
+    r'<meta[^>]+(?:property|name)=["\'](?:og:image(?::url)?|twitter:image)["\'][^>]*?content=["\']([^"\']+)', re.I)
+_OG_IMG_RE2 = re.compile(
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*?(?:property|name)=["\'](?:og:image(?::url)?|twitter:image)["\']', re.I)
+
+
+def _thumb_host_ok(url):
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return any(host == h or host.endswith("." + h) for h in THUMB_HOSTS)
+
+
+def fetch_image_bytes(url):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": UA, "Accept": "image/*,*/*;q=0.8",
+    })
+    try:
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
+            return r.read(MAX_BYTES), (r.headers.get("Content-Type") or "image/jpeg")
+    except ssl.SSLError:
+        ctx = ssl._create_unverified_context()
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
+            return r.read(MAX_BYTES), (r.headers.get("Content-Type") or "image/jpeg")
+
+
+def get_thumb(url):
+    """(bytes, content_type) of the brand page's promo image, or (None, None)."""
+    if not isinstance(url, str) or not url.startswith("https://") or not _thumb_host_ok(url):
+        return None, None
+    key = hashlib.sha1(url.encode("utf-8")).hexdigest()[:24]
+    data_path = os.path.join(THUMBS_DIR, key + ".img")
+    ct_path = os.path.join(THUMBS_DIR, key + ".ct")
+    neg_path = os.path.join(THUMBS_DIR, key + ".none")
+
+    def cached():
+        try:
+            with open(data_path, "rb") as f:
+                data = f.read()
+            try:
+                with open(ct_path, "r", encoding="utf-8") as f:
+                    ct = f.read().strip() or "image/jpeg"
+            except Exception:
+                ct = "image/jpeg"
+            return data, ct
+        except Exception:
+            return None
+
+    hit = cached()
+    if hit:
+        return hit
+    try:
+        if os.path.exists(neg_path):
+            if __import__("time").time() - os.path.getmtime(neg_path) < THUMB_RETRY_SECONDS:
+                return None, None
+            os.remove(neg_path)
+    except Exception:
+        pass
+
+    with _THUMB_LOCK:
+        hit = cached()  # another thread may have fetched while we waited
+        if hit:
+            return hit
+        os.makedirs(THUMBS_DIR, exist_ok=True)
+        try:
+            html, final_url = fetch_html(url)
+            m = _OG_IMG_RE.search(html) or _OG_IMG_RE2.search(html)
+            if not m:
+                raise ValueError("no promo image on page")
+            img_url = m.group(1).strip().replace("&amp;", "&")
+            if img_url.startswith("//"):
+                img_url = "https:" + img_url
+            img_url = urllib.parse.urljoin(final_url, img_url)
+            data, ct = fetch_image_bytes(img_url)
+            ct = (ct.split(";")[0] or "image/jpeg").strip()
+            if not data or len(data) < 500 or not ct.lower().startswith("image/"):
+                raise ValueError("not a usable image")
+            with open(data_path, "wb") as f:
+                f.write(data)
+            with open(ct_path, "w", encoding="utf-8") as f:
+                f.write(ct)
+            return data, ct
+        except Exception:
+            try:
+                with open(neg_path, "w") as f:
+                    f.write("1")
+            except Exception:
+                pass
+            return None, None
+
+
+# ---------------------------------------------------------------
+# daily outfit battle — two head-to-toe outfits, the community votes
+# ---------------------------------------------------------------
+# battles.json holds { "submissions": [...], "current": {battle} | null }.
+# Users submit a full-body photo (held for review); the admin approves
+# entries and picks two to become "today's battle"; everyone else votes.
+
+def _load_battles():
+    try:
+        with open(BATTLES_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("submissions", [])
+                d.setdefault("current", None)
+                return d
+    except Exception:
+        pass
+    return {"submissions": [], "current": None}
+
+
+def _save_battles(d):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = BATTLES_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, BATTLES_FILE)
+
+
+def _today_str():
+    return __import__("datetime").date.today().isoformat()
+
+
+def battle_public():
+    """The live battle for everyone: two outfits + vote tallies, no voter map."""
+    cur = _load_battles().get("current")
+    if not cur:
+        return {"ok": True, "battle": None}
+    voters = cur.get("voters") or {}
+    return {"ok": True, "battle": {
+        "id": cur["id"], "day": cur.get("day"),
+        "a": {"name": cur["a"]["name"], "image": cur["a"]["image"]},
+        "b": {"name": cur["b"]["name"], "image": cur["b"]["image"]},
+        "aVotes": sum(1 for v in voters.values() if v == "a"),
+        "bVotes": sum(1 for v in voters.values() if v == "b"),
+    }}
+
+
+def battle_submit(body):
+    name = str(body.get("name") or "Anonymous")[:40].strip() or "Anonymous"
+    uid = str(body.get("uid") or "")[:64].strip()
+    image = body.get("image") or ""
+    if not isinstance(image, str) or not image.startswith("data:image/"):
+        return {"ok": False, "error": "A full-body photo of your outfit is required."}
+    if len(image) > MAX_IMAGE_CHARS:
+        return {"ok": False, "error": "That photo is too large — try again, it will be compressed."}
+    with _BATTLES_LOCK:
+        d = _load_battles()
+        subs = d["submissions"]
+        if sum(1 for s in subs if s.get("status") == "pending") >= MAX_PENDING:
+            return {"ok": False, "error": "The entry queue is full right now — please try again later."}
+        subs.append({
+            "id": os.urandom(8).hex(), "name": name, "uid": uid, "image": image,
+            "status": "pending", "ts": int(__import__("time").time() * 1000),
+        })
+        _save_battles(d)
+    return {"ok": True, "message": "Your entry was sent for review."}
+
+
+def battle_vote(body):
+    """One vote per stable poster id; re-voting just moves your vote."""
+    bid = body.get("id")
+    uid = str(body.get("uid") or "")[:64].strip()
+    choice = body.get("choice")
+    if choice not in ("a", "b"):
+        return {"ok": False, "error": "Pick A or B."}
+    if not uid:
+        return {"ok": False, "error": "Sign in to vote."}
+    with _BATTLES_LOCK:
+        d = _load_battles()
+        cur = d.get("current")
+        if not cur or cur.get("id") != bid:
+            return {"ok": False, "error": "This battle has ended."}
+        voters = cur.get("voters")
+        if not isinstance(voters, dict):
+            voters = {}
+        voters[uid] = choice
+        cur["voters"] = voters
+        a_votes = sum(1 for v in voters.values() if v == "a")
+        b_votes = sum(1 for v in voters.values() if v == "b")
+        _save_battles(d)
+    return {"ok": True, "aVotes": a_votes, "bVotes": b_votes, "you": choice}
+
+
+def battle_pending(key):
+    """Admin view: every entry (pending first) + the current battle's score."""
+    if key != admin_key():
+        return {"ok": False, "error": "Wrong moderation key."}
+    d = _load_battles()
+    subs = sorted(d["submissions"], key=lambda s: (s.get("status") != "pending", -(s.get("ts") or 0)))
+    cur = d.get("current")
+    current = None
+    if cur:
+        voters = cur.get("voters") or {}
+        current = {"id": cur["id"], "aName": cur["a"]["name"], "bName": cur["b"]["name"],
+                   "aVotes": sum(1 for v in voters.values() if v == "a"),
+                   "bVotes": sum(1 for v in voters.values() if v == "b")}
+    return {"ok": True, "submissions": subs, "current": current}
+
+
+def battle_moderate(body):
+    if body.get("key") != admin_key():
+        return {"ok": False, "error": "Wrong moderation key."}
+    sid = body.get("id")
+    action = body.get("action")
+    if action not in ("approve", "reject"):
+        return {"ok": False, "error": "Unknown action."}
+    with _BATTLES_LOCK:
+        d = _load_battles()
+        target = next((s for s in d["submissions"] if s.get("id") == sid), None)
+        if not target:
+            return {"ok": False, "error": "Entry not found (already handled?)."}
+        if action == "approve":
+            target["status"] = "approved"
+        else:
+            d["submissions"] = [s for s in d["submissions"] if s.get("id") != sid]
+        _save_battles(d)
+    return {"ok": True}
+
+
+def battle_create(body):
+    """Admin picks two approved entries → they become today's battle (votes reset)."""
+    if body.get("key") != admin_key():
+        return {"ok": False, "error": "Wrong moderation key."}
+    a_id, b_id = body.get("aId"), body.get("bId")
+    if not a_id or not b_id or a_id == b_id:
+        return {"ok": False, "error": "Pick two different entries."}
+    with _BATTLES_LOCK:
+        d = _load_battles()
+        subs = {s["id"]: s for s in d["submissions"]}
+        a, b = subs.get(a_id), subs.get(b_id)
+        if not a or not b:
+            return {"ok": False, "error": "Entry not found."}
+        if a.get("status") != "approved" or b.get("status") != "approved":
+            return {"ok": False, "error": "Approve both entries first."}
+        d["current"] = {
+            "id": os.urandom(8).hex(), "day": _today_str(),
+            "a": {"subId": a["id"], "name": a["name"], "image": a["image"]},
+            "b": {"subId": b["id"], "name": b["name"], "image": b["image"]},
+            "voters": {}, "ts": int(__import__("time").time() * 1000),
+        }
+        _save_battles(d)
+    return {"ok": True, "message": "Today's battle is live."}
+
+
+def battle_close(body):
+    if body.get("key") != admin_key():
+        return {"ok": False, "error": "Wrong moderation key."}
+    with _BATTLES_LOCK:
+        d = _load_battles()
+        d["current"] = None
+        _save_battles(d)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------
+# Accounts + wardrobe sync
+#
+# A lightweight, dependency-free account system so a user's wardrobe
+# (and saved outfits) follow them between phone and PC. Passwords are
+# stored only as a salted SHA-256 hash — never in the clear. Each
+# wardrobe lives in its own file keyed by a hash of the email, so one
+# account can never read another's data.
+# ---------------------------------------------------------------
+
+ACCOUNTS_FILE = os.path.join(DATA_DIR, "accounts.json")
+WARDROBE_DIR = os.path.join(DATA_DIR, "wardrobe")
+_ACCOUNTS_LOCK = threading.Lock()
+_WARDROBE_LOCK = threading.Lock()
+
+TOKEN_TTL = 90 * 24 * 3600          # 90 days
+MAX_WARDROBE_ITEMS = 600            # generous fair-use ceiling per account
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _load_accounts():
+    try:
+        with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_accounts(d):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = ACCOUNTS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, ACCOUNTS_FILE)
+
+
+def _norm_email(e):
+    return str(e or "").strip().lower()
+
+
+def _hash_pw(salt, password):
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+
+
+def _issue_token(acct):
+    """Add a fresh token to an account record, pruning expired ones."""
+    now = int(time.time())
+    tokens = {t: exp for t, exp in (acct.get("tokens") or {}).items() if exp > now}
+    tok = secrets.token_hex(32)
+    tokens[tok] = now + TOKEN_TTL
+    acct["tokens"] = tokens
+    return tok
+
+
+def account_register(body):
+    email = _norm_email(body.get("email"))
+    password = str(body.get("password") or "")
+    name = str(body.get("name") or "").strip()[:80]
+    if not EMAIL_RE.match(email):
+        return {"ok": False, "error": "Enter a valid email."}
+    if len(password) < 6:
+        return {"ok": False, "error": "Password must be at least 6 characters."}
+    with _ACCOUNTS_LOCK:
+        accts = _load_accounts()
+        if email in accts:
+            return {"ok": False, "error": "An account with this email already exists."}
+        salt = secrets.token_hex(8)
+        acct = {"salt": salt, "passHash": _hash_pw(salt, password),
+                "name": name, "createdAt": int(time.time()), "tokens": {}}
+        tok = _issue_token(acct)
+        accts[email] = acct
+        _save_accounts(accts)
+    return {"ok": True, "token": tok, "email": email, "name": name}
+
+
+def account_login(body):
+    email = _norm_email(body.get("email"))
+    password = str(body.get("password") or "")
+    with _ACCOUNTS_LOCK:
+        accts = _load_accounts()
+        acct = accts.get(email)
+        if not acct or acct.get("passHash") != _hash_pw(acct.get("salt", ""), password):
+            return {"ok": False, "error": "Wrong email or password."}
+        tok = _issue_token(acct)
+        _save_accounts(accts)
+    return {"ok": True, "token": tok, "email": email, "name": acct.get("name", "")}
+
+
+def account_logout(body):
+    tok = str(body.get("token") or "")
+    with _ACCOUNTS_LOCK:
+        accts = _load_accounts()
+        for acct in accts.values():
+            if tok in (acct.get("tokens") or {}):
+                del acct["tokens"][tok]
+                _save_accounts(accts)
+                break
+    return {"ok": True}
+
+
+def _resolve_token(tok):
+    """Return the email a live token belongs to, or None."""
+    tok = str(tok or "")
+    if not tok:
+        return None
+    now = int(time.time())
+    accts = _load_accounts()
+    for email, acct in accts.items():
+        exp = (acct.get("tokens") or {}).get(tok)
+        if exp and exp > now:
+            return email
+    return None
+
+
+def _wardrobe_path(email):
+    key = hashlib.sha256(email.encode("utf-8")).hexdigest()
+    return os.path.join(WARDROBE_DIR, key + ".json")
+
+
+def _load_wardrobe(email):
+    try:
+        with open(_wardrobe_path(email), "r", encoding="utf-8") as f:
+            d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("items", [])
+                d.setdefault("outfits", [])
+                d.setdefault("profiles", [])
+                d.setdefault("activeProfileId", None)
+                d.setdefault("favourites", [])
+                return d
+    except Exception:
+        pass
+    return {"items": [], "outfits": [], "profiles": [], "activeProfileId": None, "favourites": []}
+
+
+def _save_wardrobe(email, data):
+    os.makedirs(WARDROBE_DIR, exist_ok=True)
+    path = _wardrobe_path(email)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+
+
+def wardrobe_get(token):
+    email = _resolve_token(token)
+    if not email:
+        return {"ok": False, "error": "auth"}
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+    return {"ok": True, "items": d["items"], "outfits": d["outfits"]}
+
+
+def _clean_item(it):
+    """Keep only known fields, bound the sizes."""
+    if not isinstance(it, dict) or not it.get("id"):
+        return None
+    img = it.get("img") or ""
+    if not isinstance(img, str) or len(img) > MAX_IMAGE_CHARS:
+        return None
+    return {
+        "id": str(it["id"])[:64],
+        "type": str(it.get("type") or "tshirt")[:24],
+        "slot": str(it.get("slot") or "top")[:16],
+        "name": str(it.get("name") or "")[:80],
+        "brand": str(it.get("brand") or "")[:60],
+        "colorHex": str(it.get("colorHex") or "#888888")[:9],
+        "colorName": str(it.get("colorName") or "")[:24],
+        "img": img,
+        "price": (float(it["price"]) if isinstance(it.get("price"), (int, float)) else None),
+        "createdAt": int(it.get("createdAt") or int(time.time() * 1000)),
+        "worn": int(it.get("worn") or 0),
+        "forSale": bool(it.get("forSale")),
+    }
+
+
+def wardrobe_put_item(body):
+    email = _resolve_token(body.get("token"))
+    if not email:
+        return {"ok": False, "error": "auth"}
+    item = _clean_item(body.get("item"))
+    if not item:
+        return {"ok": False, "error": "Bad item."}
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+        items = [x for x in d["items"] if x.get("id") != item["id"]]
+        if len(items) >= MAX_WARDROBE_ITEMS:
+            return {"ok": False, "error": "Wardrobe is full (%d items)." % MAX_WARDROBE_ITEMS}
+        items.append(item)
+        d["items"] = items
+        _save_wardrobe(email, d)
+    return {"ok": True}
+
+
+def wardrobe_delete_item(body):
+    email = _resolve_token(body.get("token"))
+    if not email:
+        return {"ok": False, "error": "auth"}
+    iid = str(body.get("id") or "")
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+        d["items"] = [x for x in d["items"] if x.get("id") != iid]
+        _save_wardrobe(email, d)
+    return {"ok": True}
+
+
+def wardrobe_put_outfits(body):
+    email = _resolve_token(body.get("token"))
+    if not email:
+        return {"ok": False, "error": "auth"}
+    outfits = body.get("outfits")
+    if not isinstance(outfits, list):
+        return {"ok": False, "error": "Bad outfits."}
+    clean = []
+    for o in outfits[:300]:
+        if isinstance(o, dict) and o.get("id"):
+            clean.append({
+                "id": str(o["id"])[:64],
+                "name": str(o.get("name") or "")[:80],
+                "createdAt": int(o.get("createdAt") or int(time.time() * 1000)),
+                "slots": {str(k)[:12]: str(v)[:64] for k, v in (o.get("slots") or {}).items()},
+            })
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+        d["outfits"] = clean
+        _save_wardrobe(email, d)
+    return {"ok": True}
+
+
+def account_data_get(token):
+    """The non-wardrobe account data: body profiles (measurements) and
+    favourited products. Kept small — profile PHOTOS are not synced."""
+    email = _resolve_token(token)
+    if not email:
+        return {"ok": False, "error": "auth"}
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+    return {"ok": True, "profiles": d["profiles"],
+            "activeProfileId": d.get("activeProfileId"),
+            "favourites": d["favourites"]}
+
+
+def _clean_profile(p):
+    """Keep measurements + identity only; drop photos (device-local, heavy)."""
+    if not isinstance(p, dict) or not p.get("id"):
+        return None
+    body = p.get("body")
+    body = body if isinstance(body, dict) else {}
+    clean_body = {}
+    for k, v in list(body.items())[:20]:
+        if isinstance(v, (int, float)) or v is None:
+            clean_body[str(k)[:16]] = v
+    return {
+        "id": str(p["id"])[:64],
+        "name": str(p.get("name") or "")[:60],
+        "sex": p.get("sex") if p.get("sex") in ("female", "male") else None,
+        "body": clean_body,
+        "createdAt": int(p.get("createdAt") or int(time.time() * 1000)),
+    }
+
+
+def profiles_put(body):
+    email = _resolve_token(body.get("token"))
+    if not email:
+        return {"ok": False, "error": "auth"}
+    profiles = body.get("profiles")
+    if not isinstance(profiles, list):
+        return {"ok": False, "error": "Bad profiles."}
+    clean = [x for x in (_clean_profile(p) for p in profiles[:20]) if x]
+    active = body.get("activeProfileId")
+    active = str(active)[:64] if active else None
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+        d["profiles"] = clean
+        d["activeProfileId"] = active
+        _save_wardrobe(email, d)
+    return {"ok": True}
+
+
+def _clean_fav(f):
+    if not isinstance(f, dict) or not f.get("id"):
+        return None
+    img = f.get("img") or ""
+    if not isinstance(img, str) or len(img) > 2048:  # favourites store an image URL, not bytes
+        img = ""
+    types = f.get("types")
+    types = [str(t)[:24] for t in types[:6]] if isinstance(types, list) else []
+    return {
+        "id": str(f["id"])[:200],
+        "brand": str(f.get("brand") or "")[:60],
+        "name": str(f.get("name") or "")[:120],
+        "note": str(f.get("note") or "")[:200],
+        "url": str(f.get("url") or "")[:400],
+        "img": img,
+        "types": types,
+        "ts": int(f.get("ts") or int(time.time() * 1000)),
+    }
+
+
+def favourites_put(body):
+    email = _resolve_token(body.get("token"))
+    if not email:
+        return {"ok": False, "error": "auth"}
+    favs = body.get("favourites")
+    if not isinstance(favs, list):
+        return {"ok": False, "error": "Bad favourites."}
+    clean = [x for x in (_clean_fav(f) for f in favs[:400]) if x]
+    with _WARDROBE_LOCK:
+        d = _load_wardrobe(email)
+        d["favourites"] = clean
+        _save_wardrobe(email, d)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------
 
@@ -592,7 +1225,48 @@ class Handler(SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             self._json(outfits_pending((qs.get("key") or [""])[0]))
             return
+        if parsed.path == "/api/thumb":
+            qs = urllib.parse.parse_qs(parsed.query)
+            u = (qs.get("u") or [""])[0]
+            try:
+                data, ct = get_thumb(u)
+            except Exception:
+                data, ct = None, None
+            if data:
+                self.send_response(200)
+                self.send_header("Content-Type", ct)
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            return
+        if parsed.path == "/api/battle":
+            self._json(battle_public())
+            return
+        if parsed.path == "/api/battle/pending":
+            qs = urllib.parse.parse_qs(parsed.query)
+            self._json(battle_pending((qs.get("key") or [""])[0]))
+            return
+        if parsed.path == "/api/wardrobe":
+            self._json(wardrobe_get(self._bearer()))
+            return
+        if parsed.path == "/api/account/data":
+            self._json(account_data_get(self._bearer()))
+            return
         super().do_GET()
+
+    def _bearer(self):
+        """Extract a token from the Authorization header (or ?token=)."""
+        h = self.headers.get("Authorization", "") or ""
+        if h.lower().startswith("bearer "):
+            return h[7:].strip()
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        return (qs.get("token") or [""])[0]
 
     def _json(self, result):
         body = json.dumps(result).encode("utf-8")
@@ -626,7 +1300,7 @@ class Handler(SimpleHTTPRequestHandler):
                 result = {"ok": False, "error": e.__class__.__name__}
             self._json(result)
             return
-        if parsed.path in ("/api/outfits", "/api/outfits/moderate", "/api/outfits/report"):
+        if parsed.path in ("/api/outfits", "/api/outfits/moderate", "/api/outfits/report", "/api/outfits/vote"):
             try:
                 length = int(self.headers.get("Content-Length", 0) or 0)
                 if length > MAX_IMAGE_CHARS + 4096:
@@ -637,8 +1311,74 @@ class Handler(SimpleHTTPRequestHandler):
                     result = outfits_submit(body)
                 elif parsed.path == "/api/outfits/moderate":
                     result = outfits_moderate(body)
+                elif parsed.path == "/api/outfits/vote":
+                    result = outfits_vote(body)
                 else:
                     result = outfits_report(body)
+            except Exception as e:
+                result = {"ok": False, "error": e.__class__.__name__}
+            self._json(result)
+            return
+        if parsed.path in ("/api/account/register", "/api/account/login", "/api/account/logout"):
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                if length > 8192:
+                    self._json({"ok": False, "error": "Bad request."})
+                    return
+                body = json.loads((self.rfile.read(length) or b"{}").decode("utf-8", "replace"))
+                if parsed.path == "/api/account/register":
+                    result = account_register(body)
+                elif parsed.path == "/api/account/login":
+                    result = account_login(body)
+                else:
+                    result = account_logout(body)
+            except Exception as e:
+                result = {"ok": False, "error": e.__class__.__name__}
+            self._json(result)
+            return
+        if parsed.path in ("/api/wardrobe/item", "/api/wardrobe/delete", "/api/wardrobe/outfits",
+                           "/api/profiles", "/api/favourites"):
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                if length > MAX_IMAGE_CHARS + 8192:
+                    self._json({"ok": False, "error": "Upload too large."})
+                    return
+                body = json.loads((self.rfile.read(length) or b"{}").decode("utf-8", "replace"))
+                # allow the token to arrive via header too
+                if not body.get("token"):
+                    body["token"] = self._bearer()
+                if parsed.path == "/api/wardrobe/item":
+                    result = wardrobe_put_item(body)
+                elif parsed.path == "/api/wardrobe/delete":
+                    result = wardrobe_delete_item(body)
+                elif parsed.path == "/api/wardrobe/outfits":
+                    result = wardrobe_put_outfits(body)
+                elif parsed.path == "/api/profiles":
+                    result = profiles_put(body)
+                else:
+                    result = favourites_put(body)
+            except Exception as e:
+                result = {"ok": False, "error": e.__class__.__name__}
+            self._json(result)
+            return
+        if parsed.path in ("/api/battle/submit", "/api/battle/vote", "/api/battle/moderate",
+                           "/api/battle/create", "/api/battle/close"):
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                if length > MAX_IMAGE_CHARS + 4096:
+                    self._json({"ok": False, "error": "Upload too large."})
+                    return
+                body = json.loads((self.rfile.read(length) or b"{}").decode("utf-8", "replace"))
+                if parsed.path == "/api/battle/submit":
+                    result = battle_submit(body)
+                elif parsed.path == "/api/battle/vote":
+                    result = battle_vote(body)
+                elif parsed.path == "/api/battle/moderate":
+                    result = battle_moderate(body)
+                elif parsed.path == "/api/battle/create":
+                    result = battle_create(body)
+                else:
+                    result = battle_close(body)
             except Exception as e:
                 result = {"ok": False, "error": e.__class__.__name__}
             self._json(result)

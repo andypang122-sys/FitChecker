@@ -96,6 +96,22 @@ const Store = (() => {
     try { write(GUEST_BODY_KEY, body); } catch (e) { /* quota — skip */ }
   }
 
+  /* ---------- body-scan history (per device, keyed by owner) ---------- */
+  const SCANS_KEY = 'fitcheck_scans';
+
+  function getScans(owner) {
+    const all = read(SCANS_KEY, {});
+    return all[owner] || [];
+  }
+
+  function recordScan(owner, heightCm, values) {
+    const all = read(SCANS_KEY, {});
+    const list = all[owner] || [];
+    list.push({ id: uid(), ts: Date.now(), heightCm, values });
+    all[owner] = list.slice(-100); // keep the last 100 scans
+    try { write(SCANS_KEY, all); } catch (e) { /* quota — skip */ }
+  }
+
   /* ---------- analytics response tracking ---------- */
   function getResponses() {
     return read(RESPONSES_KEY, []);
@@ -113,5 +129,5 @@ const Store = (() => {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
-  return { getUsers, getUser, saveUser, deleteUser, getSession, setSession, clearSession, getGuestPrefs, saveGuestPrefs, getGuestBody, saveGuestBody, getResponses, recordResponse, uid };
+  return { getUsers, getUser, saveUser, deleteUser, getSession, setSession, clearSession, getGuestPrefs, saveGuestPrefs, getGuestBody, saveGuestBody, getScans, recordScan, getResponses, recordResponse, uid };
 })();

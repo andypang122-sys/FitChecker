@@ -11,8 +11,26 @@
 const FitEngine = (() => {
 
   /* ----------------------------------------------------------
-     Size charts (body measurements each size is designed for,
-     in cm). Based on common international sizing standards.
+     Size charts — BODY measurements (cm) each size is cut for.
+     Based on common international sizing standards.
+
+     Women's and men's clothing are drafted to different bodies, so
+     every category carries a chart PER SEX and the two never mix: a
+     90cm bust is a women's M, while a 90cm chest is a men's S. Always
+     go through chartFor(type, sex) — never read .sizes directly.
+
+     Within one sex, all upper-body categories share ONE body ladder,
+     exactly as real brands publish them (a 104cm chest is a men's L in
+     the tee, the shirt AND the jacket). The extra room outerwear needs
+     is NOT baked into the chart — that would tell a size-L man to buy
+     an M. It is handled by LAYER_EASE below. Only the sleeve/length
+     values differ between categories.
+
+     Dress and skirt are womenswear, so they carry a women's chart only;
+     chartFor() falls back to it whoever asks.
+
+     Men:   chest 84/90/96/104/112/120 - waist 70/76/82/90/98/108 - shoulders 41/43/45/47/49/52  (heights ~162/167/175/182/187/192)
+     Women: bust  82/86/90/96/102/110  - waist 64/68/72/78/86/94   - shoulders 38/39/40/41/42/43  (heights ~161/165/169/173/177/181)
      ---------------------------------------------------------- */
 
   const SIZE_CHARTS = {
@@ -20,107 +38,189 @@ const FitEngine = (() => {
       label: 'T-Shirt / Top',
       zones: ['chest', 'waist', 'shoulders', 'torsoLength'],
       sizes: {
-        XS:  { chest: 84,  waist: 70,  shoulders: 41, torsoLength: 64 },
-        S:   { chest: 90,  waist: 76,  shoulders: 43, torsoLength: 66 },
-        M:   { chest: 96,  waist: 82,  shoulders: 45, torsoLength: 69 },
-        L:   { chest: 104, waist: 90,  shoulders: 47, torsoLength: 72 },
-        XL:  { chest: 112, waist: 98,  shoulders: 49, torsoLength: 74 },
-        XXL: { chest: 120, waist: 108, shoulders: 52, torsoLength: 76 }
+        male: {
+          XS:  { chest: 84,  waist: 70,  shoulders: 41, torsoLength: 64 },
+          S:   { chest: 90,  waist: 76,  shoulders: 43, torsoLength: 66 },
+          M:   { chest: 96,  waist: 82,  shoulders: 45, torsoLength: 69 },
+          L:   { chest: 104, waist: 90,  shoulders: 47, torsoLength: 72 },
+          XL:  { chest: 112, waist: 98,  shoulders: 49, torsoLength: 74 },
+          XXL: { chest: 120, waist: 108, shoulders: 52, torsoLength: 76 }
+        },
+        female: {
+          XS:  { chest: 82,  waist: 64, shoulders: 38, torsoLength: 64 },
+          S:   { chest: 86,  waist: 68, shoulders: 39, torsoLength: 65 },
+          M:   { chest: 90,  waist: 72, shoulders: 40, torsoLength: 67 },
+          L:   { chest: 96,  waist: 78, shoulders: 41, torsoLength: 68 },
+          XL:  { chest: 102, waist: 86, shoulders: 42, torsoLength: 70 },
+          XXL: { chest: 110, waist: 94, shoulders: 43, torsoLength: 71 }
+        }
       }
     },
     shirt: {
       label: 'Shirt / Blouse',
       zones: ['chest', 'waist', 'shoulders', 'sleeveLength', 'torsoLength'],
       sizes: {
-        XS:  { chest: 86,  waist: 72,  shoulders: 42, sleeveLength: 60, torsoLength: 68 },
-        S:   { chest: 92,  waist: 78,  shoulders: 44, sleeveLength: 62, torsoLength: 70 },
-        M:   { chest: 98,  waist: 84,  shoulders: 46, sleeveLength: 64, torsoLength: 73 },
-        L:   { chest: 106, waist: 92,  shoulders: 48, sleeveLength: 65, torsoLength: 76 },
-        XL:  { chest: 114, waist: 100, shoulders: 50, sleeveLength: 66, torsoLength: 78 },
-        XXL: { chest: 122, waist: 110, shoulders: 53, sleeveLength: 67, torsoLength: 80 }
+        male: {
+          XS:  { chest: 84,  waist: 70,  shoulders: 41, sleeveLength: 60, torsoLength: 68 },
+          S:   { chest: 90,  waist: 76,  shoulders: 43, sleeveLength: 62, torsoLength: 70 },
+          M:   { chest: 96,  waist: 82,  shoulders: 45, sleeveLength: 64, torsoLength: 73 },
+          L:   { chest: 104, waist: 90,  shoulders: 47, sleeveLength: 65, torsoLength: 76 },
+          XL:  { chest: 112, waist: 98,  shoulders: 49, sleeveLength: 66, torsoLength: 78 },
+          XXL: { chest: 120, waist: 108, shoulders: 52, sleeveLength: 67, torsoLength: 80 }
+        },
+        female: {
+          XS:  { chest: 82,  waist: 64, shoulders: 38, sleeveLength: 58, torsoLength: 68 },
+          S:   { chest: 86,  waist: 68, shoulders: 39, sleeveLength: 59, torsoLength: 69 },
+          M:   { chest: 90,  waist: 72, shoulders: 40, sleeveLength: 61, torsoLength: 71 },
+          L:   { chest: 96,  waist: 78, shoulders: 41, sleeveLength: 62, torsoLength: 73 },
+          XL:  { chest: 102, waist: 86, shoulders: 42, sleeveLength: 64, torsoLength: 74 },
+          XXL: { chest: 110, waist: 94, shoulders: 43, sleeveLength: 65, torsoLength: 76 }
+        }
       }
     },
     hoodie: {
       label: 'Hoodie / Sweater',
       zones: ['chest', 'waist', 'shoulders', 'sleeveLength', 'torsoLength'],
       sizes: {
-        XS:  { chest: 90,  waist: 78,  shoulders: 43, sleeveLength: 61, torsoLength: 65 },
-        S:   { chest: 96,  waist: 84,  shoulders: 45, sleeveLength: 63, torsoLength: 67 },
-        M:   { chest: 102, waist: 90,  shoulders: 47, sleeveLength: 65, torsoLength: 70 },
-        L:   { chest: 110, waist: 98,  shoulders: 49, sleeveLength: 66, torsoLength: 73 },
-        XL:  { chest: 118, waist: 106, shoulders: 51, sleeveLength: 67, torsoLength: 75 },
-        XXL: { chest: 126, waist: 116, shoulders: 54, sleeveLength: 68, torsoLength: 77 }
+        male: {
+          XS:  { chest: 84,  waist: 70,  shoulders: 41, sleeveLength: 61, torsoLength: 65 },
+          S:   { chest: 90,  waist: 76,  shoulders: 43, sleeveLength: 63, torsoLength: 67 },
+          M:   { chest: 96,  waist: 82,  shoulders: 45, sleeveLength: 65, torsoLength: 70 },
+          L:   { chest: 104, waist: 90,  shoulders: 47, sleeveLength: 66, torsoLength: 73 },
+          XL:  { chest: 112, waist: 98,  shoulders: 49, sleeveLength: 67, torsoLength: 75 },
+          XXL: { chest: 120, waist: 108, shoulders: 52, sleeveLength: 68, torsoLength: 77 }
+        },
+        female: {
+          XS:  { chest: 82,  waist: 64, shoulders: 38, sleeveLength: 58, torsoLength: 64 },
+          S:   { chest: 86,  waist: 68, shoulders: 39, sleeveLength: 59, torsoLength: 66 },
+          M:   { chest: 90,  waist: 72, shoulders: 40, sleeveLength: 61, torsoLength: 68 },
+          L:   { chest: 96,  waist: 78, shoulders: 41, sleeveLength: 62, torsoLength: 69 },
+          XL:  { chest: 102, waist: 86, shoulders: 42, sleeveLength: 64, torsoLength: 71 },
+          XXL: { chest: 110, waist: 94, shoulders: 43, sleeveLength: 65, torsoLength: 72 }
+        }
       }
     },
     jacket: {
       label: 'Jacket / Coat',
       zones: ['chest', 'waist', 'shoulders', 'sleeveLength', 'torsoLength'],
       sizes: {
-        XS:  { chest: 92,  waist: 80,  shoulders: 43, sleeveLength: 61, torsoLength: 66 },
-        S:   { chest: 98,  waist: 86,  shoulders: 45, sleeveLength: 63, torsoLength: 68 },
-        M:   { chest: 104, waist: 92,  shoulders: 47, sleeveLength: 65, torsoLength: 71 },
-        L:   { chest: 112, waist: 100, shoulders: 49, sleeveLength: 66, torsoLength: 74 },
-        XL:  { chest: 120, waist: 108, shoulders: 51, sleeveLength: 67, torsoLength: 76 },
-        XXL: { chest: 128, waist: 118, shoulders: 54, sleeveLength: 68, torsoLength: 78 }
+        male: {
+          XS:  { chest: 84,  waist: 70,  shoulders: 41, sleeveLength: 61, torsoLength: 68 },
+          S:   { chest: 90,  waist: 76,  shoulders: 43, sleeveLength: 63, torsoLength: 70 },
+          M:   { chest: 96,  waist: 82,  shoulders: 45, sleeveLength: 65, torsoLength: 73 },
+          L:   { chest: 104, waist: 90,  shoulders: 47, sleeveLength: 66, torsoLength: 76 },
+          XL:  { chest: 112, waist: 98,  shoulders: 49, sleeveLength: 67, torsoLength: 78 },
+          XXL: { chest: 120, waist: 108, shoulders: 52, sleeveLength: 68, torsoLength: 80 }
+        },
+        female: {
+          XS:  { chest: 82,  waist: 64, shoulders: 38, sleeveLength: 58, torsoLength: 68 },
+          S:   { chest: 86,  waist: 68, shoulders: 39, sleeveLength: 59, torsoLength: 69 },
+          M:   { chest: 90,  waist: 72, shoulders: 40, sleeveLength: 61, torsoLength: 71 },
+          L:   { chest: 96,  waist: 78, shoulders: 41, sleeveLength: 62, torsoLength: 73 },
+          XL:  { chest: 102, waist: 86, shoulders: 42, sleeveLength: 64, torsoLength: 74 },
+          XXL: { chest: 110, waist: 94, shoulders: 43, sleeveLength: 65, torsoLength: 76 }
+        }
       }
     },
     dress: {
       label: 'Dress',
       zones: ['chest', 'waist', 'hips', 'torsoLength'],
       sizes: {
-        XS:  { chest: 82,  waist: 64,  hips: 88,  torsoLength: 84 },
-        S:   { chest: 86,  waist: 68,  hips: 92,  torsoLength: 86 },
-        M:   { chest: 90,  waist: 72,  hips: 96,  torsoLength: 88 },
-        L:   { chest: 96,  waist: 78,  hips: 102, torsoLength: 90 },
-        XL:  { chest: 102, waist: 86,  hips: 108, torsoLength: 92 },
-        XXL: { chest: 110, waist: 94,  hips: 116, torsoLength: 94 }
+        female: {
+          XS:  { chest: 82,  waist: 64, hips: 88,  torsoLength: 84 },
+          S:   { chest: 86,  waist: 68, hips: 92,  torsoLength: 86 },
+          M:   { chest: 90,  waist: 72, hips: 96,  torsoLength: 88 },
+          L:   { chest: 96,  waist: 78, hips: 102, torsoLength: 90 },
+          XL:  { chest: 102, waist: 86, hips: 108, torsoLength: 92 },
+          XXL: { chest: 110, waist: 94, hips: 116, torsoLength: 94 }
+        }
       }
     },
     jeans: {
       label: 'Jeans / Trousers',
       zones: ['waist', 'hips', 'thigh', 'inseam'],
       sizes: {
-        XS:  { waist: 68,  hips: 88,  thigh: 52, inseam: 76 },
-        S:   { waist: 74,  hips: 94,  thigh: 55, inseam: 78 },
-        M:   { waist: 80,  hips: 100, thigh: 58, inseam: 80 },
-        L:   { waist: 88,  hips: 106, thigh: 61, inseam: 81 },
-        XL:  { waist: 96,  hips: 112, thigh: 64, inseam: 82 },
-        XXL: { waist: 106, hips: 120, thigh: 68, inseam: 82 }
+        male: {
+          XS:  { waist: 68,  hips: 88,  thigh: 52, inseam: 76 },
+          S:   { waist: 74,  hips: 94,  thigh: 55, inseam: 78 },
+          M:   { waist: 80,  hips: 100, thigh: 58, inseam: 80 },
+          L:   { waist: 88,  hips: 106, thigh: 61, inseam: 81 },
+          XL:  { waist: 96,  hips: 112, thigh: 64, inseam: 82 },
+          XXL: { waist: 106, hips: 120, thigh: 68, inseam: 82 }
+        },
+        female: {
+          XS:  { waist: 64, hips: 88,  thigh: 51, inseam: 72 },
+          S:   { waist: 68, hips: 92,  thigh: 53, inseam: 74 },
+          M:   { waist: 72, hips: 96,  thigh: 55, inseam: 76 },
+          L:   { waist: 78, hips: 102, thigh: 58, inseam: 78 },
+          XL:  { waist: 86, hips: 108, thigh: 61, inseam: 80 },
+          XXL: { waist: 94, hips: 116, thigh: 65, inseam: 81 }
+        }
       }
     },
     shorts: {
       label: 'Shorts',
       zones: ['waist', 'hips', 'thigh'],
       sizes: {
-        XS:  { waist: 68,  hips: 88,  thigh: 52 },
-        S:   { waist: 74,  hips: 94,  thigh: 55 },
-        M:   { waist: 80,  hips: 100, thigh: 58 },
-        L:   { waist: 88,  hips: 106, thigh: 61 },
-        XL:  { waist: 96,  hips: 112, thigh: 64 },
-        XXL: { waist: 106, hips: 120, thigh: 68 }
+        male: {
+          XS:  { waist: 68,  hips: 88,  thigh: 52 },
+          S:   { waist: 74,  hips: 94,  thigh: 55 },
+          M:   { waist: 80,  hips: 100, thigh: 58 },
+          L:   { waist: 88,  hips: 106, thigh: 61 },
+          XL:  { waist: 96,  hips: 112, thigh: 64 },
+          XXL: { waist: 106, hips: 120, thigh: 68 }
+        },
+        female: {
+          XS:  { waist: 64, hips: 88,  thigh: 51 },
+          S:   { waist: 68, hips: 92,  thigh: 53 },
+          M:   { waist: 72, hips: 96,  thigh: 55 },
+          L:   { waist: 78, hips: 102, thigh: 58 },
+          XL:  { waist: 86, hips: 108, thigh: 61 },
+          XXL: { waist: 94, hips: 116, thigh: 65 }
+        }
       }
     },
     skirt: {
       label: 'Skirt',
       zones: ['waist', 'hips'],
       sizes: {
-        XS:  { waist: 64,  hips: 88 },
-        S:   { waist: 68,  hips: 92 },
-        M:   { waist: 72,  hips: 96 },
-        L:   { waist: 78,  hips: 102 },
-        XL:  { waist: 86,  hips: 108 },
-        XXL: { waist: 94,  hips: 116 }
+        female: {
+          XS:  { waist: 64, hips: 88 },
+          S:   { waist: 68, hips: 92 },
+          M:   { waist: 72, hips: 96 },
+          L:   { waist: 78, hips: 102 },
+          XL:  { waist: 86, hips: 108 },
+          XXL: { waist: 94, hips: 116 }
+        }
       }
     }
   };
 
   const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-  // The built-in charts list the BODY measurements each size is designed
-  // for — the designer already added the garment's ease. Mark them so
-  // evalZone compares body-to-body instead of demanding ease on top
-  // (otherwise everyone gets recommended one size too big).
-  for (const k of Object.keys(SIZE_CHARTS)) SIZE_CHARTS[k].bodyChart = true;
+  /* The one way to get a usable chart: resolves the right ladder for this
+     wearer and flattens it to { label, zones, sizes }.
+
+     bodyChart marks that these list the BODY each size is designed for —
+     the designer already added the garment's ease — so evalZone compares
+     body-to-body instead of demanding ease on top (otherwise everyone is
+     recommended a size too big).
+
+     Womenswear-only categories (dress, skirt) have no male ladder, so a
+     male profile checking a dress falls back to the women's chart. */
+  function chartFor(garmentType, sex) {
+    const c = SIZE_CHARTS[garmentType];
+    if (!c) return null;
+    const key = sex === 'female' ? 'female' : 'male';
+    const sizes = c.sizes[key] || c.sizes.female || c.sizes.male;
+    return { label: c.label, zones: c.zones, sizes, bodyChart: true };
+  }
+
+  // Which sizes a category actually offers for this wearer.
+  function sizesFor(garmentType, sex) {
+    const c = chartFor(garmentType, sex);
+    return c ? Object.keys(c.sizes) : [];
+  }
 
   /* ----------------------------------------------------------
      Zone metadata: display names + how much ease (extra room
@@ -137,6 +237,36 @@ const FitEngine = (() => {
     sleeveLength: { label: 'Sleeve length',kind: 'length', tol: 2.5 },
     torsoLength:  { label: 'Garment length', kind: 'length', tol: 3 },
     inseam:       { label: 'Inseam',       kind: 'length', tol: 3 }
+  };
+
+  /* ----------------------------------------------------------
+     Layering. Outerwear goes ON TOP of other clothes, so what it
+     actually has to fit around is bigger than the bare body: a tee
+     sits on skin, a hoodie usually goes over a t-shirt, and a jacket
+     goes over a t-shirt and often a hoodie too. Those layers add real
+     centimetres of girth.
+
+     These are added to the wearer's girth before a size is judged, so
+     someone between sizes rounds UP for outerwear rather than down —
+     without shoving a solidly-L body into an XL.
+
+     Kept deliberately modest (a couple of cm, not the full bulk of a
+     hoodie): a brand's chart already assumes you wear normal clothes
+     under a jacket, so a large allowance would double-count and push
+     everyone a full size too big. This is the nudge on top of that.
+     ---------------------------------------------------------- */
+  const LAYER_EASE = {
+    tshirt: 0,      // straight on skin
+    dress: 0, skirt: 0, jeans: 0, shorts: 0,
+    shirt: 1,       // often over a t-shirt
+    hoodie: 1.5,    // usually over a t-shirt
+    jacket: 2.5     // over a t-shirt, often a hoodie as well
+  };
+  // What we tell the wearer we allowed room for.
+  const LAYER_UNDER = {
+    shirt: 'a t-shirt',
+    hoodie: 'a t-shirt',
+    jacket: 'a t-shirt and a hoodie'
   };
 
   // Which body measurement feeds each garment zone.
@@ -192,8 +322,15 @@ const FitEngine = (() => {
     if (garmentVal == null) return null;
 
     if (zone.kind === 'girth' || zone.kind === 'width') {
-      const bodyVal = body[BODY_SOURCE[zoneKey]];
-      if (bodyVal == null || bodyVal === '') return { status: 'info', delta: 0, score: 60, message: 'Not measured — add this measurement to your profile for a precise check.' };
+      const rawBody = body[BODY_SOURCE[zoneKey]];
+      if (rawBody == null || rawBody === '') return { status: 'info', delta: 0, score: 60, message: 'Not measured — add this measurement to your profile for a precise check.' };
+
+      // Layers sit around you, so they add girth — they don't widen your
+      // shoulders. Only girth zones carry the allowance.
+      const layer = zone.kind === 'girth' ? (LAYER_EASE[garmentType] || 0) : 0;
+      const bodyVal = Number(rawBody) + layer;
+      const layerNote = layer && LAYER_UNDER[garmentType]
+        ? ` Includes room for ${LAYER_UNDER[garmentType]} underneath.` : '';
 
       const idealEase = chart.bodyChart
         ? BODY_CHART_EASE[fitPref] != null ? BODY_CHART_EASE[fitPref] : 0
@@ -206,7 +343,7 @@ const FitEngine = (() => {
       if (delta < -t)        return { status: 'tight', delta, score: clampScore(68 + delta * 2), message: `Slightly tight at the ${zone.label.toLowerCase()} — wearable, but snugger than a ${fitPref} fit should be.` };
       if (delta > t * 1.75)  return { status: 'loose', delta, score: clampScore(38 - delta), message: `Too loose — about ${fmt(delta)} cm more room than ideal at the ${zone.label.toLowerCase()}. Expect visible bagginess.` };
       if (delta > t)         return { status: 'loose', delta, score: clampScore(68 - delta * 2), message: `Slightly loose at the ${zone.label.toLowerCase()} — a bit roomier than a ${fitPref} fit.` };
-      return { status: 'good', delta, score: clampScore(100 - Math.abs(delta) * 3), message: `Good fit at the ${zone.label.toLowerCase()} — close to the ideal amount of room for a ${fitPref} fit.` };
+      return { status: 'good', delta, score: clampScore(100 - Math.abs(delta) * 3), message: `Good fit at the ${zone.label.toLowerCase()} — close to the ideal amount of room for a ${fitPref} fit.${layerNote}` };
     }
 
     // Length zones.
@@ -265,12 +402,14 @@ const FitEngine = (() => {
   }
 
   /* ----------------------------------------------------------
-     Public: analyze(garmentType, body, fitPref[, pickedSize])
+     Public: analyze(garmentType, body, fitPref[, pickedSize, customChart, sex])
      Scores every size, picks the best, builds the verdict.
+     `sex` ('female' | 'male') selects the size chart — women's and men's
+     clothing are cut to different bodies, so this changes the answer.
      ---------------------------------------------------------- */
 
-  function analyze(garmentType, body, fitPref, pickedSize, customChart) {
-    const baseChart = SIZE_CHARTS[garmentType];
+  function analyze(garmentType, body, fitPref, pickedSize, customChart, sex) {
+    const baseChart = chartFor(garmentType, sex);
     const chart = customChart || baseChart;
     if (!chart) return null;
     fitPref = fitPref || 'regular';
@@ -447,5 +586,5 @@ const FitEngine = (() => {
   function cmToIn(cm) { return Math.round((cm / 2.54) * 10) / 10; }
   function inToCm(inch) { return Math.round(inch * 2.54 * 10) / 10; }
 
-  return { SIZE_CHARTS, SIZE_ORDER, ZONES, BODY_FIELDS, analyze, buildCustomChart, silhouetteNotes, statusWord, cmToIn, inToCm };
+  return { SIZE_CHARTS, SIZE_ORDER, ZONES, BODY_FIELDS, analyze, chartFor, sizesFor, buildCustomChart, silhouetteNotes, statusWord, cmToIn, inToCm };
 })();
