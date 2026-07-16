@@ -35,10 +35,22 @@ and `Procfile` are already in this folder.
 3. Set env vars:
    - **`FITCHECK_ADMIN_KEY`** = a long random string you choose. This is your
      moderation password and it stays stable across restarts (no disk needed).
-   - **`FITCHECK_DATA_DIR`** = a mounted volume path (e.g. `/data`) if your host
-     offers one, so community posts survive redeploys. Optional for a soft launch —
-     without it, posts reset on redeploy but the app still runs fine.
+   - **`FITCHECK_DATA_DIR`** = the mount path of a **persistent disk** (e.g. `/data`).
 4. Deploy. The host assigns a public HTTPS URL. `$PORT` is handled for you.
+
+> **A persistent disk is no longer optional.** This used to say the disk was a
+> nice-to-have, because the only thing on it was community outfit posts — losing
+> those on redeploy was a fair trade for free hosting.
+>
+> That changed when accounts landed. `FITCHECK_DATA_DIR` now holds
+> `accounts.json` (every user's login) and `wardrobe/<hash>.json` (every user's
+> wardrobe, measurements and favourites). **Without a real disk, every redeploy
+> deletes all of it and your users cannot log in again.**
+>
+> On Render that means a **paid instance** (free tier has no disks) plus the
+> `disk:` block in `render.yaml`. Note the Dockerfile's `VOLUME ["/data"]` does
+> *not* create the disk — Render only provisions one from `render.yaml` or the
+> dashboard. Free hosting is fine for a throwaway demo, not for real signups.
 
 ### Fly.io alternative
 ```

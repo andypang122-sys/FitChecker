@@ -9,8 +9,25 @@ services:
   - type: web
     name: fitcheck
     runtime: docker
-    plan: free            # change to "starter" ($7/mo) for always-on, no cold starts
+
+    # NOT free, and this is not about cold starts any more.
+    # Since accounts landed, this server keeps REAL USER DATA on disk:
+    #   /data/accounts.json          every login (email + password hash)
+    #   /data/wardrobe/<hash>.json   every wardrobe, measurement and favourite
+    # Render's free tier has no persistent disk, so every redeploy or restart
+    # would silently delete all of it and lock users out of their own accounts.
+    # Disks are only available on paid instances, hence starter.
+    plan: starter
     healthCheckPath: /
+
+    # The disk is what actually makes the data survive. The Dockerfile's
+    # VOLUME ["/data"] does NOT create one — Render only provisions a disk
+    # from this block (or from the dashboard), and ignores Docker VOLUME.
+    disk:
+      name: fitcheck-data
+      mountPath: /data       # matches FITCHECK_DATA_DIR in the Dockerfile
+      sizeGB: 1              # plenty — wardrobe photos are compressed to ~150KB
+
     envVars:
       - key: FITCHECK_ADMIN_KEY
         generateValue: true   # Render creates a secure random key (view it in the dashboard)
