@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FitCheck server — static file host + brand size-guide extractor.
+FitChecker server — static file host + brand size-guide extractor.
 
 Run:  python server.py [port]     (default port 8000)
 
@@ -1417,7 +1417,7 @@ def main():
     port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8000))
     handler = functools.partial(Handler, directory=BASE_DIR)
     server = ThreadingHTTPServer(("", port), handler)
-    print("FitCheck server running at http://localhost:%d" % port)
+    print("FitChecker server running at http://localhost:%d" % port)
     print("Outfit moderation: http://localhost:%d/#/moderate  (key: %s)" % (port, admin_key()))
     server.serve_forever()
 

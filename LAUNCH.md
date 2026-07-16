@@ -1,6 +1,6 @@
-# FitCheck — Launch Guide (Apple App Store + Google Play)
+# FitChecker — Launch Guide (Apple App Store + Google Play)
 
-This is your end-to-end checklist to get FitCheck onto both stores. The code is
+This is your end-to-end checklist to get FitChecker onto both stores. The code is
 ready; what remains is mostly **accounts, hosting, and store paperwork** — the
 parts only you can do. Work top to bottom.
 
@@ -103,7 +103,7 @@ packages.
 2. Build + submit it. This step needs macOS/Xcode. **No Mac?** Push the project to
    GitHub and use **Codemagic** (codemagic.io) — it builds, signs, and uploads to
    App Store Connect from the cloud, no Mac required.
-3. **(Optional) Share Sheet:** to make FitCheck appear in the iOS share sheet, add
+3. **(Optional) Share Sheet:** to make FitChecker appear in the iOS share sheet, add
    the kit in `ios/share-extension/` to the Xcode project (see its README). Android
    already has this via the manifest; iOS needs this small native piece.
 
@@ -115,7 +115,7 @@ packages.
 - **Screenshots**: capture from your live app on a phone (and tablet for iPad).
   Apple needs 6.7" iPhone shots; Play needs a few phone shots. Show: the fit
   verdict, the size chart reader, and the Outfits feed.
-- **Text**: app name (FitCheck), subtitle ("Know your fit before you buy"),
+- **Text**: app name (FitChecker), subtitle ("Know your fit before you buy"),
   description, keywords/category (Shopping or Lifestyle).
 - **Privacy Policy URL** + **Support URL** (Part C).
 - **App Privacy / Data Safety questionnaire** — declare truthfully:
@@ -133,7 +133,7 @@ packages.
 
 - ✓ **Apple 1.2 (user content):** report button, block, a content-policy agreement
   before posting, human moderation, and a published zero-tolerance policy — all in.
-- ✓ **Apple 4.2 (minimum functionality):** FitCheck does real work beyond a web page
+- ✓ **Apple 4.2 (minimum functionality):** FitChecker does real work beyond a web page
   (fit engine, camera measurement, size-guide reader, community) — not a thin wrapper.
 - ✓ **Account deletion:** Settings → "Delete my account & data."
 - ✓ **Privacy policy** reachable at a real URL.
@@ -149,7 +149,7 @@ packages.
 
 ## Part G — Fastest real launch (optional, can be live in a day)
 
-Once Part B is done, FitCheck is a fully installable app **right now** via the web:
+Once Part B is done, FitChecker is a fully installable app **right now** via the web:
 - iPhone: Safari → Share → **Add to Home Screen**
 - Android: Chrome → menu → **Install app**
 

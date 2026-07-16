@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "FitCheck — Know your fit before you buy",
-  "short_name": "FitCheck",
+  "name": "FitChecker — Know your fit before you buy",
+  "short_name": "FitChecker",
   "description": "Save your body measurements, add a photo of any garment, and get a size verdict: too tight, too loose, too short — and your best size to buy.",
   "start_url": ".",
   "scope": ".",

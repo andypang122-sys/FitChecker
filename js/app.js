@@ -410,7 +410,7 @@
           <span class="brand-mark">
             <img src="icons/apple-touch-icon.png" alt="">
           </span>
-          <h1>FitCheck account</h1>
+          <h1>FitChecker account</h1>
           <p>An account lets you save your measurements, photos and fit-check history on this device — and use the camera.</p>
         </div>
         <div class="auth-card">
@@ -489,7 +489,7 @@
         Auth.save();
         toast('Your measurements were saved to your new account.', 'ok');
       } else {
-        toast(isRegister ? 'Welcome to FitCheck!' : 'Welcome back, ' + res.user.name + '!', 'ok');
+        toast(isRegister ? 'Welcome to FitChecker!' : 'Welcome back, ' + res.user.name + '!', 'ok');
       }
 
       const dest = returnTo;
@@ -542,7 +542,7 @@
     bar.className = 'install-banner';
     bar.innerHTML = `
       <div class="ib-text">
-        <strong>Install FitCheck</strong>
+        <strong>Install FitChecker</strong>
         <span>Check sizes from any store — straight from your phone's share button.</span>
       </div>
       <div class="ib-actions">
@@ -693,7 +693,7 @@
         </div>
 
         <div class="card">
-          <div class="card-title">How FitCheck works</div>
+          <div class="card-title">How FitChecker works</div>
           <div class="steps-3">
             <div class="step-3">
               <span class="s3-art g-tshirt">${garmentSvg('tshirt')}</span>
@@ -797,7 +797,7 @@
       slot.innerHTML = `
         <a class="card home-link-card" href="#/wardrobe">
           <div class="card-title">Your wardrobe is empty</div>
-          <p class="muted small">Photograph what you own and FitCheck can build outfits from it, rate them, and tell you what your closet is missing. <span class="hl-more">Open wardrobe →</span></p>
+          <p class="muted small">Photograph what you own and FitChecker can build outfits from it, rate them, and tell you what your closet is missing. <span class="hl-more">Open wardrobe →</span></p>
         </a>`;
       return;
     }
@@ -1353,7 +1353,7 @@
           <span style="flex:1;min-width:200px">✓ Using <strong>${esc(wiz.customChart.brand)}</strong>'s own size guide — sizes ${esc(wiz.customChart.sizeOrder.join(', '))}</span>
           <button class="btn btn-ghost btn-sm" id="chart-remove">Remove</button>
         </div>` : `
-        <p class="hint mb-8">Paste a link to the product or the brand's size-guide page. FitCheck reads their chart and judges the fit by the brand's own numbers.</p>
+        <p class="hint mb-8">Paste a link to the product or the brand's size-guide page. FitChecker reads their chart and judges the fit by the brand's own numbers.</p>
         <div class="btn-row mb-8">
           <input class="input" id="wz-url" type="url" inputmode="url" placeholder="https://brand.com/size-guide" value="${esc(wiz.chartUrl)}" style="flex:1;min-width:200px">
           <button class="btn btn-secondary" id="chart-fetch">Fetch guide</button>
@@ -1361,7 +1361,7 @@
         <p class="hint mb-16" id="chart-msg"></p>`}
 
         <div class="section-label">Size you're considering (optional)</div>
-        <p class="hint mb-8">Leave empty and FitCheck will simply recommend your best size.</p>
+        <p class="hint mb-8">Leave empty and FitChecker will simply recommend your best size.</p>
         <div class="chip-row mb-16" id="size-chips">
           <button class="chip ${wiz.pickedSize === '' ? 'selected' : ''}" data-size="">Not sure</button>
           ${(wiz.customChart ? wiz.customChart.sizeOrder : FitEngine.SIZE_ORDER).map(s => `<button class="chip ${wiz.pickedSize === s ? 'selected' : ''}" data-size="${esc(s)}">${esc(s)}</button>`).join('')}
@@ -1441,7 +1441,7 @@
         renderWizStep2();
       } catch (e) {
         msg.textContent = location.protocol === 'file:'
-          ? '✕ This feature needs a connection — open FitCheck from its web address, not a local file.'
+          ? '✕ This feature needs a connection — open FitChecker from its web address, not a local file.'
           : '✕ Could not reach the size-guide reader — check your connection and try again.';
         fetchBtn.disabled = false;
         fetchBtn.textContent = 'Fetch guide';
@@ -1463,7 +1463,7 @@
     document.getElementById('garment-photo-btn').onclick = () => {
       saveName();
       // Camera + photos require an account (photos are saved to it)
-      if (!requireAuth('Camera & photos need an account', 'Photos are saved with your profile and history, so FitCheck asks you to log in before using the camera or uploading images.')) return;
+      if (!requireAuth('Camera & photos need an account', 'Photos are saved with your profile and history, so FitChecker asks you to log in before using the camera or uploading images.')) return;
       Camera.pickImage({
         onImage: dataUrl => { wiz.garmentPhoto = dataUrl; renderWizStep2(); },
         onError: msg => toast(msg, 'err')
@@ -2000,7 +2000,7 @@
         <p>Add recommendations to js/recs.js and they appear here.</p>
       </div></div>`}
 
-      <p class="disclosure">Some links may earn FitCheck a small commission. It never changes what's recommended.</p>`;
+      <p class="disclosure">Some links may earn FitChecker a small commission. It never changes what's recommended.</p>`;
 
     wireFavButtons(view);
   }
@@ -2027,7 +2027,7 @@
             <p class="muted">Open <a href="#/foryou">For You</a> and tap the ♥ on anything you like — it lands here, saved to your account.</p>
           </div>`}
       </div>
-      ${favs.length ? '<p class="disclosure">Some links may earn FitCheck a small commission. It never changes what\'s recommended.</p>' : ''}`;
+      ${favs.length ? '<p class="disclosure">Some links may earn FitChecker a small commission. It never changes what\'s recommended.</p>' : ''}`;
 
     // re-render so the count + list update immediately when unhearted
     wireFavButtons(view, () => renderFavourites());
@@ -2074,7 +2074,7 @@
       const inches = Math.round(FitEngine.cmToIn(profile.body.waist));
       lines.push(`Waist: ${inches}in / ${disp(profile.body.waist)} ${units()}`);
     }
-    return `👕 My FitCheck sizes\n\n${lines.join('\n')}\n\nMeasured with FitCheck — know your fit before you buy.`;
+    return `👕 My FitChecker sizes\n\n${lines.join('\n')}\n\nMeasured with FitChecker — know your fit before you buy.`;
   }
 
   function renderPassport() {
@@ -2123,7 +2123,7 @@
     document.getElementById('pp-share').onclick = async () => {
       const text = passportShareText(profile, sizes);
       try {
-        if (navigator.share) { await navigator.share({ title: 'My FitCheck sizes', text }); return; }
+        if (navigator.share) { await navigator.share({ title: 'My FitChecker sizes', text }); return; }
       } catch (e) { if (e && e.name === 'AbortError') return; }
       try {
         await navigator.clipboard.writeText(text);
@@ -2284,7 +2284,7 @@
     view.innerHTML = `
       <div class="card">
         <h2 class="mb-8">Your colours</h2>
-        <p class="muted small mb-16">FitCheck reads your skin tone from a selfie — entirely on your device, nothing is uploaded — and finds the colours that flatter ${whose} most. Works best in soft, natural daylight with no filter.</p>
+        <p class="muted small mb-16">FitChecker reads your skin tone from a selfie — entirely on your device, nothing is uploaded — and finds the colours that flatter ${whose} most. Works best in soft, natural daylight with no filter.</p>
         <button class="btn btn-primary" id="col-start">${saved ? 'Analyse a new photo' : 'Analyse my colours'}</button>
       </div>
       <div id="col-result">${saved ? colourResultCard(saved) : ''}</div>`;
@@ -2410,7 +2410,7 @@
         overlay.remove();
         if (d.ok) { if (cardEl) cardEl.remove(); toast('Reported and hidden — thanks for flagging.', 'ok'); }
         else toast(d.error || 'Could not report.', 'err');
-      }).catch(() => { overlay.remove(); toast('Could not reach FitCheck — check your connection.', 'err'); });
+      }).catch(() => { overlay.remove(); toast('Could not reach FitChecker — check your connection.', 'err'); });
     });
   }
 
@@ -2440,7 +2440,7 @@
           likeBtn.classList.toggle('active', d.you === 'like');
           disBtn.classList.toggle('active', d.you === 'dislike');
         })
-        .catch(() => toast('Could not reach FitCheck — check your connection.', 'err'))
+        .catch(() => toast('Could not reach FitChecker — check your connection.', 'err'))
         .finally(() => {
           const mine = card.getAttribute('data-uid') && card.getAttribute('data-uid') === posterUid();
           if (!mine) card.querySelectorAll('.of-vote').forEach(x => { x.disabled = false; });
@@ -2600,7 +2600,7 @@
           wireBattle(container, merged);
           wireBattleEnter(container);
         })
-        .catch(() => toast('Could not reach FitCheck — check your connection.', 'err'));
+        .catch(() => toast('Could not reach FitChecker — check your connection.', 'err'));
     });
   }
 
@@ -2610,7 +2610,7 @@
 
   function enterBattleFlow() {
     const u = Auth.user();
-    if (!requireAuth('Entering needs an account', 'Battle entries carry your name and a full-body photo, so FitCheck asks you to log in first. Entries are reviewed before a moderator picks the daily match-up.')) return;
+    if (!requireAuth('Entering needs an account', 'Battle entries carry your name and a full-body photo, so FitChecker asks you to log in first. Entries are reviewed before a moderator picks the daily match-up.')) return;
 
     const overlay = openModal(`
       <h3 class="card-title">Enter the daily battle</h3>
@@ -2674,13 +2674,13 @@
           overlay.remove();
           toast('Entry sent! If you\'re picked, you\'ll appear in a daily battle.', 'ok');
         })
-        .catch(() => { toast('Could not reach FitCheck — check your connection.', 'err'); btn.disabled = false; btn.textContent = 'Send for review'; });
+        .catch(() => { toast('Could not reach FitChecker — check your connection.', 'err'); btn.disabled = false; btn.textContent = 'Send for review'; });
     };
   }
 
   function postOutfitFlow() {
     const u = Auth.user();
-    if (!requireAuth('Posting needs an account', 'Outfit posts carry your name and a photo, so FitCheck asks you to log in first. Posts are reviewed before they appear.')) return;
+    if (!requireAuth('Posting needs an account', 'Outfit posts carry your name and a photo, so FitChecker asks you to log in first. Posts are reviewed before they appear.')) return;
 
     Camera.pickImage({
       onImage: dataUrl => {
@@ -2745,7 +2745,7 @@
               toast('Sent for review — it appears once approved.', 'ok');
             })
             .catch(() => {
-              toast('Could not reach FitCheck — check your connection and try again.', 'err');
+              toast('Could not reach FitChecker — check your connection and try again.', 'err');
               btn.disabled = false; btn.textContent = 'Send for review';
             });
         };
@@ -2905,7 +2905,7 @@
 
     view.innerHTML = `
       <div class="hero-cta">
-        <h2>How to use FitCheck</h2>
+        <h2>How to use FitChecker</h2>
         <p>Three minutes here saves you every wrong-size order later. Good measurements in — good verdicts out.</p>
         <a href="#/analyze" class="btn btn-lg">Jump straight in</a>
       </div>
@@ -2913,7 +2913,7 @@
       <div class="card">
         <div class="card-title">Quick start</div>
         <div class="help-row"><span class="num-dot">1</span><div><strong>Enter your measurements.</strong> Go to <a href="#/analyze">Analyze</a> and type them in — or save them once as a profile (free account) so it's one tap forever.</div></div>
-        <div class="help-row"><span class="num-dot">2</span><div><strong>Describe the garment.</strong> Pick the type (t-shirt, jeans, dress…), how you like it to fit, and — if you're eyeing one — the size you're considering. Paste the shop's link and FitCheck reads the brand's own size chart. With an account you can also snap a photo of it.</div></div>
+        <div class="help-row"><span class="num-dot">2</span><div><strong>Describe the garment.</strong> Pick the type (t-shirt, jeans, dress…), how you like it to fit, and — if you're eyeing one — the size you're considering. Paste the shop's link and FitChecker reads the brand's own size chart. With an account you can also snap a photo of it.</div></div>
         <div class="help-row"><span class="num-dot">3</span><div><strong>Read the verdict.</strong> You get a fit score, a zone-by-zone breakdown of what's tight or loose, and the best size to buy.</div></div>
       </div>
 
@@ -2949,7 +2949,7 @@
           <div class="zone-card"><span class="zone-dot short"></span><div class="zone-body"><div class="zone-name">Too short / too long</div><div class="zone-msg">Sleeves, length or inseam don't match your proportions.</div></div></div>
           <div class="zone-card"><span class="zone-dot info"></span><div class="zone-body"><div class="zone-name">No data</div><div class="zone-msg">You haven't given that measurement — add it to raise the confidence rating.</div></div></div>
         </div>
-        <p class="hint mt-16">The "Best" tag in the size table marks your best size. <strong>Confidence</strong> reflects how many of your measurements FitCheck could use — more measurements, sharper verdict.</p>
+        <p class="hint mt-16">The "Best" tag in the size table marks your best size. <strong>Confidence</strong> reflects how many of your measurements FitChecker could use — more measurements, sharper verdict.</p>
       </div>
 
       <div class="card">
@@ -2966,15 +2966,15 @@
         <div class="faq">
           <details>
             <summary>How accurate is the verdict?</summary>
-            <div class="faq-body">FitCheck compares your measurements against standard international size charts with tailoring "ease" rules — the extra room a slim, regular or relaxed fit should have. It's a strong guide, but brands do vary: when a shop publishes its own size chart, cross-check the winning size against it.</div>
+            <div class="faq-body">FitChecker compares your measurements against standard international size charts with tailoring "ease" rules — the extra room a slim, regular or relaxed fit should have. It's a strong guide, but brands do vary: when a shop publishes its own size chart, cross-check the winning size against it.</div>
           </details>
           <details>
-            <summary>Can FitCheck use a brand's own size chart?</summary>
-            <div class="faq-body">Yes — in the Analyze step, paste a link to the product page or the brand's size-guide page and press "Fetch guide". FitCheck opens the page, finds their size chart (following "size guide" links if needed) and judges every size by the brand's own numbers instead of the standard charts. Tip: if a product page doesn't work, open the brand's size-guide page in your browser and paste that link — some shops only load their chart with JavaScript, which can't be read.</div>
+            <summary>Can FitChecker use a brand's own size chart?</summary>
+            <div class="faq-body">Yes — in the Analyze step, paste a link to the product page or the brand's size-guide page and press "Fetch guide". FitChecker opens the page, finds their size chart (following "size guide" links if needed) and judges every size by the brand's own numbers instead of the standard charts. Tip: if a product page doesn't work, open the brand's size-guide page in your browser and paste that link — some shops only load their chart with JavaScript, which can't be read.</div>
           </details>
           <details>
             <summary>Why does it disagree with the size I always buy?</summary>
-            <div class="faq-body">Vanity sizing is real — an "M" at one brand is an "L" at another. FitCheck judges by centimetres, not labels. Also check your fit preference: a relaxed fit shifts the recommendation up compared to slim.</div>
+            <div class="faq-body">Vanity sizing is real — an "M" at one brand is an "L" at another. FitChecker judges by centimetres, not labels. Also check your fit preference: a relaxed fit shifts the recommendation up compared to slim.</div>
           </details>
           <details>
             <summary>Is my data uploaded anywhere?</summary>
@@ -2986,10 +2986,10 @@
           </details>
           <details>
             <summary>Some zones say "no data". Is that bad?</summary>
-            <div class="faq-body">Not bad — just less precise. Only height, chest, waist and hips are required. Adding shoulders, arm length, inseam and thigh lets FitCheck judge sleeves, garment length and trouser fit too, and raises the confidence rating.</div>
+            <div class="faq-body">Not bad — just less precise. Only height, chest, waist and hips are required. Adding shoulders, arm length, inseam and thigh lets FitChecker judge sleeves, garment length and trouser fit too, and raises the confidence rating.</div>
           </details>
           <details>
-            <summary>Can I use FitCheck as a phone app?</summary>
+            <summary>Can I use FitChecker as a phone app?</summary>
             <div class="faq-body">Yes — it installs like a native app. iPhone: Safari → Share → "Add to Home Screen". Android: Chrome → menu ⋮ → "Install app". Full steps are in <a href="#/settings">Settings</a>. Once installed it even works offline.</div>
           </details>
         </div>
@@ -3181,7 +3181,7 @@
           <div class="empty">
             <div class="empty-icon">🚪</div>
             <h3>Your closet, in your pocket</h3>
-            <p>Snap each piece you own and FitCheck builds you a digital wardrobe — then mix and match outfits without trying anything on. It needs a free account first, and your photos stay on this device.</p>
+            <p>Snap each piece you own and FitChecker builds you a digital wardrobe — then mix and match outfits without trying anything on. It needs a free account first, and your photos stay on this device.</p>
             <button class="btn btn-primary btn-lg" data-promo-login>Log in / Create free account</button>
           </div>
         </div>`;
@@ -3248,7 +3248,7 @@
         <div class="card wardrobe-hero">
           <div class="wh-badge">✦ Pro</div>
           <h2>Build your digital wardrobe</h2>
-          <p class="muted">Photograph everything you own — FitCheck cuts each piece out and keeps your whole closet on your phone. Then:</p>
+          <p class="muted">Photograph everything you own — FitChecker cuts each piece out and keeps your whole closet on your phone. Then:</p>
           <ul class="wh-list">
             <li>👕 <span>Mix & match outfits without trying anything on</span></li>
             <li>🤖 <span>AI rates the combo and finds gaps to fill</span></li>
@@ -3372,7 +3372,7 @@
       ${picks.length ? `<div class="row-list mt-16">${picks.map(p => `
         ${p.size ? `<div class="gap-size">In your size — <strong>${esc(p.size)}</strong> · ${esc(p.g.label.toLowerCase())}</div>` : ''}
         ${recRow(p.rec)}`).join('')}</div>
-        <p class="disclosure">Some links may earn FitCheck a small commission. It never changes what's recommended.</p>` : ''}
+        <p class="disclosure">Some links may earn FitChecker a small commission. It never changes what's recommended.</p>` : ''}
     </div>`;
   }
 
@@ -3713,7 +3713,7 @@
         icon: '<path d="M12 3a9 9 0 0 0 0 18 3 3 0 0 0 0-6 2 2 0 0 1 0-4h1.5a4.5 4.5 0 0 0 4.5-4.5C18 3.9 15.3 3 12 3Z"/>' },
       { route: 'settings', label: 'Settings', sub: 'Units, language, account',
         icon: '<path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.5"/><circle cx="8" cy="16" r="2.5"/>' },
-      { route: 'help', label: 'Help & FAQ', sub: 'How FitCheck works',
+      { route: 'help', label: 'Help & FAQ', sub: 'How FitChecker works',
         icon: '<circle cx="12" cy="12" r="9"/><path d="M9.2 9a2.9 2.9 0 0 1 5.6 1c0 1.8-2.8 2.2-2.8 4"/><circle cx="12" cy="17.6" r=".3" fill="currentColor"/>' }
     ];
 
@@ -3779,7 +3779,7 @@
 
       <div class="card">
         <div class="card-title">Language</div>
-        <p class="muted small mb-16">The interface language for FitCheck on this device. Each screen is translated the first time you open it, then saved — so it gets faster (and works offline) the more you use it.</p>
+        <p class="muted small mb-16">The interface language for FitChecker on this device. Each screen is translated the first time you open it, then saved — so it gets faster (and works offline) the more you use it.</p>
         <div class="field">
           <select class="input" id="st-lang">
             ${I18n.LANGS.map(l => `<option value="${l.code}" ${I18n.current() === l.code ? 'selected' : ''}>${esc(l.label)}</option>`).join('')}
@@ -3800,9 +3800,9 @@
       </div>
 
       <div class="card">
-        <div class="card-title">Install FitCheck</div>
+        <div class="card-title">Install FitChecker</div>
         ${(!isStandalone() && deferredInstallPrompt) ? '<button class="btn btn-primary mb-16" id="st-install">Install now</button>' : ''}
-        <p class="muted small">FitCheck works as an app on your phone:</p>
+        <p class="muted small">FitChecker works as an app on your phone:</p>
         <div class="zone-list mt-8">
           <div class="zone-card"><span class="zone-dot" style="background:var(--primary)"></span><div class="zone-body"><div class="zone-name">iPhone / iPad</div><div class="zone-msg">Open in Safari → Share button → "Add to Home Screen".</div></div></div>
           <div class="zone-card"><span class="zone-dot" style="background:var(--primary)"></span><div class="zone-body"><div class="zone-name">Android</div><div class="zone-msg">Open in Chrome → menu (⋮) → "Add to Home screen" / "Install app".</div></div></div>
@@ -3889,7 +3889,7 @@
     wiz = null;
     guestResult = null;
     authTab = 'login';
-    toast('Logged out — you can keep using FitCheck as a guest.');
+    toast('Logged out — you can keep using FitChecker as a guest.');
     go('home');
     render();
   }

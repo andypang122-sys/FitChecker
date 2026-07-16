@@ -1,7 +1,7 @@
 'use strict';
 /* ============================================================
    Money — the monetisation layer (shared across Dewy / Swoon /
-   FitCheck). Two revenue streams, both device-local:
+   FitChecker). Two revenue streams, both device-local:
 
      1. A daily free limit on the core action. Past the limit a
         user either waits until tomorrow, watches a rewarded ad
@@ -25,7 +25,7 @@ const Money = (() => {
     noun:       'fit check',         // singular label for the gated action
     nounPlural: 'fit checks',
     freePerDay: 2,                   // free uses of the core action per day
-    proName:    'FitCheck Pro',
+    proName:    'FitChecker Pro',
     proPrice:   '$5',
     proPeriod:  'month',
     checkoutUrl:'',                  // ← paste your Paddle / Lemon Squeezy link

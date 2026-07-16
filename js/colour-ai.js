@@ -1,5 +1,5 @@
 'use strict';
-/* FitCheck — ColourAI
+/* FitChecker — ColourAI
    On-device personal-colour analysis. Reads a selfie's skin pixels with a
    canvas (no cloud, no API key), estimates the wearer's undertone (warm / cool /
    neutral) and depth (light / medium / deep) via CIELAB + the ITA° skin scale,

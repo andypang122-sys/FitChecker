@@ -27,7 +27,7 @@
               paste the tracking link here — it is used instead of
               url automatically. Leave '' until then.
 
-   NOTE: most retail sites bot-block automated scraping, so FitCheck
+   NOTE: most retail sites bot-block automated scraping, so FitChecker
    cannot fetch these photos by itself for category links — but any
    image URL you paste from your own browser will load fine.
 

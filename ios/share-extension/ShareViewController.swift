@@ -1,9 +1,9 @@
 import UIKit
 import UniformTypeIdentifiers
 
-//  FitCheck — Share Extension
+//  FitChecker — Share Extension
 //  ---------------------------------------------------------------------------
-//  When a user shares a product page (from Safari or another app) to FitCheck,
+//  When a user shares a product page (from Safari or another app) to FitChecker,
 //  this grabs the link, hands it to the main app via a shared App Group, opens
 //  the app, and returns the user there. No compose screen — process and go.
 //

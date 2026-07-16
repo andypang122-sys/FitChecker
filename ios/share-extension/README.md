@@ -1,7 +1,7 @@
-# FitCheck — iOS Share Extension kit
+# FitChecker — iOS Share Extension kit
 
-This makes **FitCheck appear in the iOS Share Sheet**, so someone shopping in
-Safari (or another app) can tap **Share → FitCheck** and land in the app with the
+This makes **FitChecker appear in the iOS Share Sheet**, so someone shopping in
+Safari (or another app) can tap **Share → FitChecker** and land in the app with the
 product's size guide already loading.
 
 > **Where this runs:** you add these files to the Xcode project that **PWABuilder
@@ -20,10 +20,10 @@ product's size guide already loading.
 ## How it connects
 ```
 Safari share sheet
-   → FitCheck Share Extension (ShareViewController)
+   → FitChecker Share Extension (ShareViewController)
        saves the link to the App Group, opens  fitcheck://share
    → main app reads the App Group, loads  https://YOUR-URL/index.html?url=<link>
-   → FitCheck's existing JS routes to Analyze and auto-reads the size guide
+   → FitChecker's existing JS routes to Analyze and auto-reads the size guide
 ```
 
 ## Step-by-step (in Xcode, on a Mac / Codemagic)
@@ -31,7 +31,7 @@ Safari share sheet
 1. **Open** the PWABuilder-generated `.xcodeproj`.
 
 2. **Add the Share Extension target:** File → New → Target → **Share Extension** →
-   name it `FitCheckShare`. Delete the auto-created `MainInterface.storyboard`
+   name it `FitCheckerShare`. Delete the auto-created `MainInterface.storyboard`
    and `ShareViewController.swift`, then drag in **this** `ShareViewController.swift`
    and replace the target's `Info.plist` with the one here.
 
@@ -65,12 +65,12 @@ Safari share sheet
    PWABuilder shell's WKWebView).
 
 7. **Build & run on a real device.** Open Safari → any product page → Share →
-   FitCheck should appear. Tap it → FitCheck opens → Analyze auto-reads the guide.
+   FitChecker should appear. Tap it → FitChecker opens → Analyze auto-reads the guide.
 
 ## Notes
 - **Real device recommended** for testing the share sheet; the Simulator's share
   options are limited.
-- If FitCheck doesn't appear in the sheet, re-check: App Group id identical on both
+- If FitChecker doesn't appear in the sheet, re-check: App Group id identical on both
   targets, the extension's `NSExtensionActivationRule`, and that both targets are
   signed with your team.
 - The extension deliberately has no UI — it processes and bounces the user into the

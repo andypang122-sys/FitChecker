@@ -1,8 +1,8 @@
-# FitCheck 👕✓
+# FitChecker 👕✓
 
-**Know your fit before you buy.** Save your body measurements once, add any garment, and FitCheck tells you how it will fit — *too tight, too loose, too short, too long* — zone by zone, and which size you should actually buy.
+**Know your fit before you buy.** Save your body measurements once, add any garment, and FitChecker tells you how it will fit — *too tight, too loose, too short, too long* — zone by zone, and which size you should actually buy.
 
-FitCheck is a **Progressive Web App (PWA)**: one codebase that runs in any browser and installs like a native app on **iOS, Android and desktop**, and works offline once installed.
+FitChecker is a **Progressive Web App (PWA)**: one codebase that runs in any browser and installs like a native app on **iOS, Android and desktop**, and works offline once installed.
 
 ---
 
@@ -13,7 +13,7 @@ The app is plain HTML/CSS/JS — no build step, no dependencies to install.
 **Recommended:**
 
 ```
-cd FitCheck
+cd FitChecker
 python server.py
 ```
 
@@ -62,7 +62,7 @@ For each size it computes `garment − body − ideal ease` per zone. Within tol
 ## 📁 Project structure
 
 ```
-FitCheck/
+FitChecker/
 ├── index.html        app shell
 ├── css/styles.css    design system (mobile-first, sidebar on desktop)
 ├── js/

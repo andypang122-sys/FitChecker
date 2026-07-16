@@ -1,28 +1,28 @@
 'use strict';
-/* FitCheck service worker.
+/* FitChecker service worker.
    Strategy: NETWORK-FIRST — always serve the freshest files when
    online, fall back to the cache only when offline. This prevents
    stale layouts/JS from being served after an update. */
 
-const CACHE = 'fitcheck-v53';
+const CACHE = 'fitcheck-v54';
 const ASSETS = [
   '.',
   'index.html',
-  'css/styles.css?v=53',
-  'js/i18n.js?v=53',
-  'js/storage.js?v=53',
-  'js/auth.js?v=53',
-  'js/fit-engine.js?v=53',
-  'js/camera.js?v=53',
-  'js/body-scan.js?v=53',
-  'js/wardrobe.js?v=53',
-  'js/cloud.js?v=53',
-  'js/recs.js?v=53',
-  'js/style-ai.js?v=53',
-  'js/colour-ai.js?v=53',
-  'js/monetize.js?v=53',
-  'js/analytics.js?v=53',
-  'js/app.js?v=53',
+  'css/styles.css?v=54',
+  'js/i18n.js?v=54',
+  'js/storage.js?v=54',
+  'js/auth.js?v=54',
+  'js/fit-engine.js?v=54',
+  'js/camera.js?v=54',
+  'js/body-scan.js?v=54',
+  'js/wardrobe.js?v=54',
+  'js/cloud.js?v=54',
+  'js/recs.js?v=54',
+  'js/style-ai.js?v=54',
+  'js/colour-ai.js?v=54',
+  'js/monetize.js?v=54',
+  'js/analytics.js?v=54',
+  'js/app.js?v=54',
   'manifest.json',
   'img/wardrobe.svg',
   'icons/icon-192.png',

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Info.plist for the FitCheck Share Extension target.
-     Activation rule = show FitCheck in the share sheet when a web URL (or text
+<!-- Info.plist for the FitChecker Share Extension target.
+     Activation rule = show FitChecker in the share sheet when a web URL (or text
      containing one) is shared. Code-only, so it uses NSExtensionPrincipalClass
      instead of a storyboard. -->
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>FitCheck</string>
+    <string>FitChecker</string>
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundleIdentifier</key>

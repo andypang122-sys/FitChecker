@@ -1,12 +1,12 @@
-//  Add these to the MAIN FitCheck app (the PWABuilder-generated wrapper).
+//  Add these to the MAIN FitChecker app (the PWABuilder-generated wrapper).
 //  ---------------------------------------------------------------------------
 //  When the Share Extension opens the app via  fitcheck://share , read the
 //  pending link from the App Group and load it into the WKWebView with a
-//  ?url= query. FitCheck's existing JavaScript picks it up from location.search,
+//  ?url= query. FitChecker's existing JavaScript picks it up from location.search,
 //  routes to Analyze, and auto-reads the size guide — no web changes needed.
 //
 //  Adapt two things to your project:
-//    • BASE_URL   — your deployed FitCheck address
+//    • BASE_URL   — your deployed FitChecker address
 //    • `webView`  — the WKWebView property name used by the PWABuilder shell
 //  ---------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-# FitCheck — self-contained Python server (standard library only, no deps).
+# FitChecker — self-contained Python server (standard library only, no deps).
 FROM python:3.11-slim
 
 WORKDIR /app
