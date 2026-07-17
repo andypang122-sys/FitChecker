@@ -1109,9 +1109,23 @@ textarea.input { resize: vertical; min-height: 76px; }
 .divider { height: 1px; background: var(--border); margin: 18px 0; }
 .mt-8  { margin-top: 8px; }
 .mt-16 { margin-top: 16px; }
+.mb-4  { margin-bottom: 4px; }
 .mb-8  { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
 .mb-16 { margin-bottom: 16px; }
 .text-center { text-align: center; }
+
+/* manual size-guide entry (Analyze wizard) */
+.field-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
+.input.input-sm { padding: 7px 9px; font-size: 14px; }
+.btn-link {
+  background: none; border: none; padding: 0; font: inherit;
+  color: var(--accent); font-weight: 600; text-decoration: underline;
+  cursor: pointer;
+}
+.mc-grid { border-collapse: collapse; margin-bottom: 8px; }
+.mc-grid th, .mc-grid td { padding: 4px 6px; text-align: left; }
+.mc-grid th { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 
 /* ============================================================
    Motion

@@ -105,6 +105,170 @@
     return false;
   }
 
+  // Many big retailers (Shein, ASOS, Zara…) either draw their size chart with
+  // JavaScript or block server fetches, so the URL reader can't reach it. But
+  // the numbers are right there on the shopper's screen — this lets them type
+  // the chart in by hand. It produces the exact same shape the fetcher does,
+  // so it flows through FitEngine.buildCustomChart → analyze identically.
+  const MANUAL_ZONES = [
+    ['chest', 'Chest / Bust'],
+    ['waist', 'Waist'],
+    ['hips', 'Hips'],
+    ['shoulders', 'Shoulder'],
+    ['sleeveLength', 'Sleeve'],
+    ['torsoLength', 'Length'],
+    ['inseam', 'Inseam']
+  ];
+
+  // '90-95', '90–95 cm', '37,5' → a single number (range → midpoint).
+  // Mirrors the server's cell_value so manual and fetched charts agree.
+  function parseChartCell(text) {
+    const t = String(text || '').replace(/,/g, '.').replace(/[–—]/g, '-');
+    const nums = (t.match(/\d+(?:\.\d+)?/g) || []).map(Number);
+    if (!nums.length) return null;
+    if (nums.length >= 2 && nums[1] > nums[0] && (nums[1] - nums[0]) <= 25) {
+      return Math.round(((nums[0] + nums[1]) / 2) * 10) / 10;
+    }
+    return nums[0];
+  }
+
+  function openManualChartModal(garmentType, onDone) {
+    // seed the columns from what this garment actually has a chart for, so a
+    // top opens on Chest and jeans on Waist/Hips rather than a blank guess
+    const seedZones = FitEngine.sizesFor(garmentType, userSex()).length
+      ? (FitEngine.chartFor(garmentType, userSex()) || {}).zones : null;
+    const st = {
+      brand: '',
+      mode: 'body',                       // 'body' | 'garment'
+      active: {},
+      labels: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+      vals: {}                            // vals[label][zoneKey] = raw string
+    };
+    (seedZones && seedZones.length ? seedZones : ['chest']).forEach(z => {
+      if (MANUAL_ZONES.some(m => m[0] === z)) st.active[z] = true;
+    });
+    if (!Object.keys(st.active).length) st.active.chest = true;
+
+    const overlay = openModal('');
+    const modal = overlay.querySelector('.modal');
+    modal.style.maxWidth = '580px';
+
+    function readInputs() {
+      const b = modal.querySelector('#mc-brand');
+      if (b) st.brand = b.value;
+      modal.querySelectorAll('[data-label]').forEach(inp => {
+        st.labels[+inp.getAttribute('data-label')] = inp.value;
+      });
+      modal.querySelectorAll('[data-cell]').forEach(inp => {
+        const [i, zone] = inp.getAttribute('data-cell').split('|');
+        (st.vals[i] = st.vals[i] || {})[zone] = inp.value;
+      });
+    }
+
+    function build() {
+      const zones = MANUAL_ZONES.filter(z => st.active[z[0]]).map(z => z[0]);
+      const sizes = {}, order = [];
+      st.labels.forEach((rawLabel, i) => {
+        const label = String(rawLabel || '').trim().toUpperCase();
+        if (!label) return;
+        const cells = st.vals[i] || {};
+        const vals = {};
+        zones.forEach(z => {
+          const v = parseChartCell(cells[z]);
+          if (v != null) vals[z] = v;
+        });
+        if (Object.keys(vals).length && !sizes[label]) {
+          sizes[label] = vals; order.push(label);
+        }
+      });
+      const usedZones = Array.from(new Set(order.flatMap(s => Object.keys(sizes[s]))));
+      if (order.length < 2 || !usedZones.length) return null;
+      return {
+        ok: true,
+        brand: (st.brand || '').trim() || 'Custom',
+        source: null,
+        units: 'cm',
+        measurements: st.mode,            // buildCustomChart: bodyChart = mode !== 'garment'
+        zones: usedZones,
+        sizeOrder: order,
+        sizes: sizes
+      };
+    }
+
+    function render() {
+      const zones = MANUAL_ZONES.filter(z => st.active[z[0]]);
+      modal.innerHTML = `
+        <h3 class="card-title">Enter the size guide</h3>
+        <p class="muted small" style="margin-bottom:14px">Read the numbers off the brand's chart and type them in. Ranges like <strong>90-95</strong> are fine. In centimetres.</p>
+
+        <label class="field-label" for="mc-brand">Brand (optional)</label>
+        <input class="input mb-12" id="mc-brand" type="text" value="${esc(st.brand)}" placeholder="e.g. ASOS">
+
+        <div class="section-label">These numbers are…</div>
+        <div class="chip-row mb-4" id="mc-mode">
+          <button class="chip ${st.mode === 'body' ? 'selected' : ''}" data-mode="body">Body measurements</button>
+          <button class="chip ${st.mode === 'garment' ? 'selected' : ''}" data-mode="garment">Garment measurements</button>
+        </div>
+        <p class="hint mb-12">${st.mode === 'body'
+          ? "The wearer's body (a “Body chart” / “Kroppsmått” tab). Compared directly."
+          : "The flat garment's own size (a “Product chart”). Room for movement is added on top."}</p>
+
+        <div class="section-label">Which columns does the chart have?</div>
+        <div class="chip-row mb-12" id="mc-zones">
+          ${MANUAL_ZONES.map(([k, lab]) => `<button class="chip ${st.active[k] ? 'selected' : ''}" data-zone="${k}">${esc(lab)}</button>`).join('')}
+        </div>
+
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <table class="mc-grid">
+            <thead><tr><th>Size</th>${zones.map(z => `<th>${esc(z[1])}</th>`).join('')}</tr></thead>
+            <tbody>
+              ${st.labels.map((lab, i) => `
+                <tr>
+                  <td><input class="input input-sm" data-label="${i}" type="text" value="${esc(lab)}" style="width:64px"></td>
+                  ${zones.map(z => `<td><input class="input input-sm" data-cell="${i}|${z[0]}" type="text" inputmode="decimal" value="${esc((st.vals[i] || {})[z[0]] || '')}" placeholder="–" style="width:72px"></td>`).join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <button class="btn btn-ghost btn-sm mb-8" id="mc-addrow">+ Add a size row</button>
+
+        <div class="divider"></div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="mc-cancel">Cancel</button>
+          <button class="btn btn-primary" id="mc-save">Use this guide</button>
+        </div>`;
+
+      modal.querySelector('#mc-mode').onclick = e => {
+        const b = e.target.closest('[data-mode]'); if (!b) return;
+        readInputs(); st.mode = b.getAttribute('data-mode'); render();
+      };
+      modal.querySelector('#mc-zones').onclick = e => {
+        const b = e.target.closest('[data-zone]'); if (!b) return;
+        readInputs();
+        const k = b.getAttribute('data-zone');
+        if (st.active[k]) delete st.active[k]; else st.active[k] = true;
+        if (!Object.keys(st.active).length) st.active[k] = true; // keep at least one
+        render();
+      };
+      modal.querySelector('#mc-addrow').onclick = () => {
+        readInputs(); st.labels.push(''); render();
+        const rows = modal.querySelectorAll('[data-label]');
+        rows[rows.length - 1].focus();
+      };
+      modal.querySelector('#mc-cancel').onclick = () => overlay.remove();
+      modal.querySelector('#mc-save').onclick = () => {
+        readInputs();
+        const data = build();
+        if (!data) { toast('Add at least 2 sizes with a measurement each.', 'err'); return; }
+        const chart = FitEngine.buildCustomChart(data);
+        if (!chart) { toast('That chart didn’t look complete — check the numbers.', 'err'); return; }
+        overlay.remove();
+        onDone(chart);
+      };
+    }
+    render();
+  }
+
   // Free accounts get 1 body profile; Pro unlocks up to 10.
   const PROFILE_CAP_FREE = 1;
   const PROFILE_CAP_PRO = 10;
@@ -1358,7 +1522,8 @@
           <input class="input" id="wz-url" type="url" inputmode="url" placeholder="https://brand.com/size-guide" value="${esc(wiz.chartUrl)}" style="flex:1;min-width:200px">
           <button class="btn btn-secondary" id="chart-fetch">Fetch guide</button>
         </div>
-        <p class="hint mb-16" id="chart-msg"></p>`}
+        <p class="hint mb-8" id="chart-msg"></p>
+        <p class="hint mb-16">Some shops (Shein, ASOS, Zara…) block the reader or draw their chart with JavaScript. If the link won't work, <button class="btn-link" id="chart-manual" type="button">enter the chart by hand</button> — it takes ten seconds and works for any brand.</p>`}
 
         <div class="section-label">Size you're considering (optional)</div>
         <p class="hint mb-8">Leave empty and FitChecker will simply recommend your best size.</p>
@@ -1446,6 +1611,16 @@
         fetchBtn.disabled = false;
         fetchBtn.textContent = 'Fetch guide';
       }
+    };
+    const manualBtn = document.getElementById('chart-manual');
+    if (manualBtn) manualBtn.onclick = () => {
+      saveName();
+      openManualChartModal(wiz.garmentType, chart => {
+        wiz.customChart = chart;
+        if (wiz.pickedSize && !chart.sizes[wiz.pickedSize]) wiz.pickedSize = '';
+        toast('Using ' + chart.brand + "'s size guide!", 'ok');
+        renderWizStep2();
+      });
     };
     // arrived via the share sheet with a link waiting → read it automatically
     if (fetchBtn && wiz.autoFetchShare && wiz.chartUrl && !wiz.customChart) {
