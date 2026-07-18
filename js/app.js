@@ -2108,9 +2108,8 @@
           ${recThumb(item)}
           <span class="row-main">
             <span class="title">${esc(item.name)}</span>
-            <span class="sub">${esc(item.note)}</span>
+            <span class="sub">${item.brand ? `<span class="rec-brand">${esc(item.brand)}</span> ` : ''}${esc(item.note)}</span>
           </span>
-          <span class="badge">${esc(item.brand)}</span>
           <span class="rec-arrow" aria-hidden="true">&#8599;</span>
         </a>
         <button class="fav-btn ${faved ? 'on' : ''}" data-fav="${esc(id)}" aria-label="${faved ? 'Remove from favourites' : 'Save to favourites'}" aria-pressed="${faved}">${HEART}</button>
@@ -2265,7 +2264,11 @@
 
   function renderPassport() {
     const u = Auth.user();
-    const profile = getActiveProfile();
+    // Guests have a guestBody (from the Analyze wizard) but no saved profile —
+    // build a throwaway one so the Passport works for free users too.
+    const profile = getActiveProfile() || (guestBody && guestBody.chest != null
+      ? { name: 'Me', sex: guestSex(), body: guestBody }
+      : null);
 
     if (!profile || !profile.body || profile.body.chest == null) {
       view.innerHTML = `

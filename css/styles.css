@@ -609,8 +609,11 @@ textarea.input { resize: vertical; min-height: 76px; }
 .g-skirt  { background: linear-gradient(135deg, #b07fd0, #8a5aa8); }
 
 .row-main { flex: 1; min-width: 0; }
-.row-main .title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-main .sub { font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* display:block is required — text-overflow:ellipsis is ignored on inline
+   spans, so without it a long name overflows onto the brand badge/heart
+   on narrow phones instead of truncating. */
+.row-main .title { display: block; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-main .sub { display: block; font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .score-pill {
   font-size: 13px;
@@ -1363,6 +1366,9 @@ textarea.input { resize: vertical; min-height: 76px; }
 
 .rec-row { color: var(--text); }
 .rec-row .badge { flex-shrink: 0; }
+/* brand now rides on the description line (freeing the full width for the
+   product name), shown as a small accent label */
+.rec-brand { color: var(--accent); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
 .rec-arrow {
   color: var(--text-3);
   font-size: 15px;
