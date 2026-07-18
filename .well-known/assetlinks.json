@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.onrender.fitchecker_p4xe.twa",
+    "sha256_cert_fingerprints": ["CF:B0:06:B0:F5:AD:4E:BA:FB:03:85:A2:73:28:CE:B6:9B:F0:B2:02:4B:AD:53:23:EF:AD:7A:3C:DA:44:D9:67"]
+  }
+}]
