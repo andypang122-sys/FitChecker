@@ -199,7 +199,7 @@
       const zones = MANUAL_ZONES.filter(z => st.active[z[0]]);
       modal.innerHTML = `
         <h3 class="card-title">Enter the size guide</h3>
-        <p class="muted small" style="margin-bottom:14px">Read the numbers off the brand's chart and type them in. Ranges like <strong>90-95</strong> are fine. In centimetres.</p>
+        <p class="muted small" style="margin-bottom:14px">Read the numbers off your screenshot of the brand's size guide and type them in. Ranges like <strong>90-95</strong> are fine. In centimetres.</p>
 
         <label class="field-label" for="mc-brand">Brand (optional)</label>
         <input class="input mb-12" id="mc-brand" type="text" value="${esc(st.brand)}" placeholder="e.g. ASOS">
@@ -1523,7 +1523,11 @@
           <button class="btn btn-secondary" id="chart-fetch">Fetch guide</button>
         </div>
         <p class="hint mb-8" id="chart-msg"></p>
-        <p class="hint mb-16">Some shops (Shein, ASOS, Zara…) block the reader or draw their chart with JavaScript. If the link won't work, <button class="btn-link" id="chart-manual" type="button">enter the chart by hand</button> — it takes ten seconds and works for any brand.</p>`}
+        <div class="reco-banner mb-16" id="chart-fallback" style="display:none;background:var(--surface);border:1px solid var(--border)">
+          <p class="small" style="margin:0 0 4px"><strong>That shop blocks automatic reading.</strong> Many do (Shein, ASOS, Zara…).</p>
+          <p class="small muted" style="margin:0 0 10px">Open the brand's <strong>size guide</strong> on their website, screenshot it so you can see the numbers, then pop them in here — it takes about ten seconds and works for any brand.</p>
+          <button class="btn btn-primary btn-sm" id="chart-manual" type="button">Enter it from the size guide</button>
+        </div>`}
 
         <div class="section-label">Size you're considering (optional)</div>
         <p class="hint mb-8">Leave empty and FitChecker will simply recommend your best size.</p>
@@ -1590,6 +1594,11 @@
       if (!url) { toast('Paste a link first.', 'err'); return; }
       saveName();
       wiz.chartUrl = url;
+      const fallback = document.getElementById('chart-fallback');
+      // block, not the class's default flex — so the copy stacks above a
+      // full-width button instead of squashing into a row
+      const showFallback = () => { if (fallback) fallback.style.display = 'block'; };
+      if (fallback) fallback.style.display = 'none';
       fetchBtn.disabled = true;
       fetchBtn.textContent = 'Reading…';
       msg.textContent = 'Opening the page and looking for a size chart…';
@@ -1597,7 +1606,7 @@
         const resp = await fetch('api/size-chart?url=' + encodeURIComponent(url));
         if (!resp.ok) throw new Error('server');
         const data = await resp.json();
-        if (!data.ok) { msg.textContent = '✕ ' + data.error; fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch guide'; return; }
+        if (!data.ok) { msg.textContent = '✕ ' + data.error; showFallback(); fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch guide'; return; }
         const chart = FitEngine.buildCustomChart(data);
         if (!chart) throw new Error('bad chart');
         wiz.customChart = chart;
@@ -1607,7 +1616,8 @@
       } catch (e) {
         msg.textContent = location.protocol === 'file:'
           ? '✕ This feature needs a connection — open FitChecker from its web address, not a local file.'
-          : '✕ Could not reach the size-guide reader — check your connection and try again.';
+          : '✕ Could not reach the size-guide reader.';
+        showFallback();
         fetchBtn.disabled = false;
         fetchBtn.textContent = 'Fetch guide';
       }
