@@ -522,6 +522,7 @@
     const chrome = name !== 'login'; // login page is a focused full screen
 
     document.body.classList.toggle('authed', chrome);
+    document.body.classList.toggle('guest', !u); // true when no one is signed in
     topbar.classList.toggle('hidden', !chrome);
     mainnav.classList.toggle('hidden', !chrome);
 

@@ -150,6 +150,15 @@ body.authed #view { padding-top: calc(var(--topbar-h) + 24px); }
 
 .topbar-right { display: flex; align-items: center; gap: 10px; }
 
+/* Guest header: on a phone the brand sat lonely in the far-left corner with
+   a big empty gap to "Log in" on the right. Centre the wordmark so it reads
+   as intentional; login stays reachable on the right. Guest = signed out. */
+body.guest .topbar-inner { position: relative; justify-content: flex-end; }
+body.guest .brand {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+}
+
 .profile-chip {
   background: var(--primary-soft);
   color: var(--text);
