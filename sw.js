@@ -4,25 +4,25 @@
    online, fall back to the cache only when offline. This prevents
    stale layouts/JS from being served after an update. */
 
-const CACHE = 'fitcheck-v57';
+const CACHE = 'fitcheck-v58';
 const ASSETS = [
   '.',
   'index.html',
-  'css/styles.css?v=57',
-  'js/i18n.js?v=57',
-  'js/storage.js?v=57',
-  'js/auth.js?v=57',
-  'js/fit-engine.js?v=57',
-  'js/camera.js?v=57',
-  'js/body-scan.js?v=57',
-  'js/wardrobe.js?v=57',
-  'js/cloud.js?v=57',
-  'js/recs.js?v=57',
-  'js/style-ai.js?v=57',
-  'js/colour-ai.js?v=57',
-  'js/monetize.js?v=57',
-  'js/analytics.js?v=57',
-  'js/app.js?v=57',
+  'css/styles.css?v=58',
+  'js/i18n.js?v=58',
+  'js/storage.js?v=58',
+  'js/auth.js?v=58',
+  'js/fit-engine.js?v=58',
+  'js/camera.js?v=58',
+  'js/body-scan.js?v=58',
+  'js/wardrobe.js?v=58',
+  'js/cloud.js?v=58',
+  'js/recs.js?v=58',
+  'js/style-ai.js?v=58',
+  'js/colour-ai.js?v=58',
+  'js/monetize.js?v=58',
+  'js/analytics.js?v=58',
+  'js/app.js?v=58',
   'manifest.json',
   'img/wardrobe.svg',
   'icons/icon-192.png',
@@ -30,7 +30,8 @@ const ASSETS = [
   'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png',
   'privacy.html',
-  'terms.html'
+  'terms.html',
+  'delete-account.html'
 ];
 
 self.addEventListener('install', event => {

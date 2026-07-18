@@ -3163,7 +3163,7 @@
           </details>
           <details>
             <summary>Is my data uploaded anywhere?</summary>
-            <div class="faq-body">No. Your account, measurements, photos and history live only in this browser on this device. Nothing is sent to a server — which also means clearing browser data erases it, and accounts don't transfer between devices.</div>
+            <div class="faq-body">As a guest, no — everything stays in this browser on this device. If you create an account, your measurements, profiles, wardrobe and favourites sync to it so they follow you across devices; face and body photos stay on your device. We never sell your data, and you can delete your account and everything with it at any time from Settings.</div>
           </details>
           <details>
             <summary>The camera doesn't open — what now?</summary>
@@ -3997,7 +3997,9 @@
 
       <div class="card">
         <div class="card-title">Privacy & data</div>
-        <p class="muted small mb-8">Your ${u ? 'account, measurements, profiles, photos and history live' : 'preferences live'} only in this browser on this device — never uploaded. Clearing browser data erases them.</p>
+        <p class="muted small mb-8">${u
+          ? 'Your measurements, saved profiles, wardrobe and favourites sync to your account, so they follow you across your devices. Face and body photos stay on this device. You can erase all of it below.'
+          : 'Your measurements and preferences live only in this browser on this device — nothing is uploaded. Clearing browser data erases them.'}</p>
         <p class="muted small mb-16">Some features do use the internet: translating the interface, reading a brand's size guide, and posting to the community (your photo, caption and display name). Details in our <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a> and <a href="terms.html" target="_blank" rel="noopener">Terms</a>.</p>
         ${u ? '<button class="btn btn-danger" id="st-delete">Delete my account & data</button>' : ''}
       </div>`;
@@ -4054,9 +4056,21 @@
 
     document.getElementById('st-delete').onclick = () => confirmModal(
       'Delete your account?',
-      'This permanently removes your account, profiles, photos and history from this device. It cannot be undone.',
+      'This permanently removes your account, profiles, measurements, wardrobe, favourites, photos and history — from this device and from our servers. It cannot be undone.',
       'Delete everything',
-      () => {
+      async () => {
+        // Delete server-side FIRST so nothing is left behind. If the account
+        // is synced and the server can't be reached, stop — otherwise we'd
+        // wipe the device but leave the data on the server (and a re-login
+        // would restore it), which is not a real deletion.
+        if (Cloud.isLinked()) {
+          const r = await Cloud.deleteAccount();
+          if (!r || !r.ok) {
+            toast('Could not reach the server — please try again when online.', 'err');
+            return;
+          }
+          Cloud.clearLink();
+        }
         Auth.deleteAccount();
         toast('Account deleted.');
         go('home');

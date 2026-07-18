@@ -991,6 +991,29 @@ def account_logout(body):
     return {"ok": True}
 
 
+def account_delete(body):
+    """Erase an account and ALL its data: the accounts.json entry (login +
+    every token) and the per-user wardrobe file (measurements, favourites,
+    profiles and photos). Required by Play's account-deletion policy."""
+    tok = str(body.get("token") or "")
+    email = _resolve_token(tok)
+    if not email:
+        return {"ok": False, "error": "auth"}
+    with _ACCOUNTS_LOCK:
+        accts = _load_accounts()
+        if email in accts:
+            del accts[email]
+            _save_accounts(accts)
+    with _WARDROBE_LOCK:
+        try:
+            os.remove(_wardrobe_path(email))
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 def _resolve_token(tok):
     """Return the email a live token belongs to, or None."""
     tok = str(tok or "")
@@ -1340,7 +1363,8 @@ class Handler(SimpleHTTPRequestHandler):
                 result = {"ok": False, "error": e.__class__.__name__}
             self._json(result)
             return
-        if parsed.path in ("/api/account/register", "/api/account/login", "/api/account/logout"):
+        if parsed.path in ("/api/account/register", "/api/account/login",
+                           "/api/account/logout", "/api/account/delete"):
             try:
                 length = int(self.headers.get("Content-Length", 0) or 0)
                 if length > 8192:
@@ -1351,6 +1375,8 @@ class Handler(SimpleHTTPRequestHandler):
                     result = account_register(body)
                 elif parsed.path == "/api/account/login":
                     result = account_login(body)
+                elif parsed.path == "/api/account/delete":
+                    result = account_delete(body)
                 else:
                     result = account_logout(body)
             except Exception as e:

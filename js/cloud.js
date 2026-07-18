@@ -100,9 +100,13 @@ const Cloud = (() => {
   async function putProfiles(profiles, activeProfileId) { const t = token(); if (!t) return { ok: false }; return _post('profiles', { token: t, profiles, activeProfileId }); }
   async function putFavourites(favourites) { const t = token(); if (!t) return { ok: false }; return _post('favourites', { token: t, favourites }); }
 
+  // Erase the account + all its data (login, measurements, wardrobe,
+  // favourites, photos) from the server. Play requires real deletion.
+  async function deleteAccount() { const t = token(); if (!t) return { ok: false }; return _post('account/delete', { token: t }); }
+
   return { session, token, isLinked, register, login, link, logout,
            getWardrobe, putItem, deleteItem, putOutfits,
-           getAccountData, putProfiles, putFavourites, clearLink };
+           getAccountData, putProfiles, putFavourites, deleteAccount, clearLink };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Cloud };
