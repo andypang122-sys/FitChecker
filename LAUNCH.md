@@ -118,14 +118,59 @@ packages.
 - **Text**: app name (FitChecker), subtitle ("Know your fit before you buy"),
   description, keywords/category (Shopping or Lifestyle).
 - **Privacy Policy URL** + **Support URL** (Part C).
-- **App Privacy / Data Safety questionnaire** — declare truthfully:
-  - *Photos* and *User Content* (caption, display name) — **collected** when a user
-    posts to the community; used for **App Functionality**; **not** used for tracking.
-  - Account name/email/measurements are stored **only on device** → "not collected."
-  - No third-party ads, no analytics SDKs.
+- **App Privacy / Data Safety questionnaire** — see the full answer sheet in
+  **Part E.2** below. Do not answer from memory: accounts, ads and the Gemini
+  vision call all moved data off-device after this guide was first written.
 - **Age rating**: because there's user-generated content, expect **12+ (Apple) /
   Teen (Google)**. Answer "yes" to user-generated content and describe your
   moderation (review-before-publish + report + block).
+
+---
+
+## Part E.2 — The privacy answer sheet (verified against the code)
+
+> ⚠ **An earlier version of this guide said email, name and measurements were
+> "device only" and that there were no third-party ads. Both are now false.**
+> Filing that would be an inaccurate privacy declaration — grounds for removal
+> after you're live, not just a rejection. What the code actually does:
+
+| Data | Where it goes | Evidence |
+|------|---------------|----------|
+| Email, display name, password hash | **Server** — `accounts.json` | `account_register`, server.py |
+| Body measurements, wardrobe, favourites | **Server** — `wardrobe/<hash>.json` | `_wardrobe_path`, server.py |
+| Photos (community posts) | **Server** — `data/outfits.json` + `data/thumbs/` | `outfits_submit`, server.py |
+| Size-chart screenshots | **Sent to Google (Gemini API)** | `_gemini_vision`, server.py |
+| UI strings | **Sent to Google (translate endpoint)** | `gtx_translate`, server.py |
+| Ad identifiers | **Third-party ad network** | `adsbygoogle` in monetize.js |
+| Quiz analytics | Device-only, never transmitted | js/analytics.js |
+
+### Apple — App Privacy
+Declare **collected, linked to identity, NOT used for tracking**:
+- **Contact Info** → Email Address, Name
+- **User Content** → Photos, Other User Content (captions)
+- **Health & Fitness** → body measurements *(Apple treats body metrics here)*
+- **Identifiers** → account/user ID
+- If ads stay in the build: **Identifiers → Device ID**, purpose **Third-Party
+  Advertising**, and you must then answer **YES** to App Tracking Transparency
+  and show the ATT prompt.
+
+### Google Play — Data Safety
+- Collected **and** shared: Personal info (name, email), Photos, Health & fitness
+  (measurements). "Shared" is **yes** because images go to Google's Gemini API.
+- Encrypted in transit: **yes** (HTTPS).
+- Users can request deletion: **yes** — Settings → "Delete my account & data",
+  backed by `account_delete` in server.py. Play also needs a **web-accessible**
+  deletion URL, not just an in-app path.
+- Data collection is **required, not optional**, for account features.
+
+### Both stores
+- **Ads:** AdSense is not licensed for app inventory — use **AdMob** in the
+  wrapped builds, or strip ads from v1. Serving AdSense inside a TWA risks the
+  AdSense account itself.
+- **Paid tier:** `CFG.checkout` is empty, so nothing is sold today. **Ship v1
+  with the paid tier off.** External checkout for in-app unlocks collides with
+  Apple's IAP rules, and those rules differ by storefront and have been moving
+  since 2025 — add IAP deliberately after launch, not during review.
 
 ---
 
