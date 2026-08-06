@@ -4,8 +4,9 @@ FitChecker server — static file host + brand size-guide extractor.
 
 Run:  python server.py [port]     (default port 8000)
 
-Endpoint:
-  GET /api/size-chart?url=<product or size-guide page URL>
+Endpoints:
+  GET  /api/size-chart?url=<product or size-guide page URL>
+  POST /api/size-chart/vision  { image: <data URL> }  (needs GEMINI_API_KEY)
 
 Fetches the page server-side (no CORS limits), scans every HTML table
 for something that looks like a size chart (sizes x body measurements),
@@ -27,6 +28,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -362,6 +364,177 @@ def get_size_chart(url):
         "zones": chart["zones"],
         "sizeOrder": chart["order"],
         "sizes": chart["sizes"],
+    }
+
+
+# ---------------------------------------------------------------
+# size chart from a screenshot, via Gemini vision (optional)
+#
+# The URL reader above fails whenever a shop draws its size guide with
+# JavaScript or as an image (Shein, ASOS, Zara…). But the shopper can see
+# the chart on their own screen — so they screenshot it and this reads the
+# numbers straight off the picture, returning the SAME shape get_size_chart
+# does, so it flows through the identical fit pipeline.
+#
+# Requires a Google AI Studio key in the GEMINI_API_KEY env var. Without
+# it the endpoint politely reports the feature is off; nothing else breaks.
+# ---------------------------------------------------------------
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+VISION_TIMEOUT = 30
+
+# the fit engine's custom-chart path understands exactly these zones
+VISION_ZONES = ["chest", "waist", "hips", "shoulders", "sleeveLength", "torsoLength", "inseam"]
+
+VISION_PROMPT = (
+    "You are reading a clothing brand's SIZE GUIDE from a screenshot. "
+    "Extract the chart into JSON.\n"
+    "- One object per size in `rows`, in the order shown.\n"
+    "- `size` is the label exactly as shown (e.g. \"S\", \"M\", \"XL\", \"38\", \"US 8\").\n"
+    "- Map each measurement to one of these keys, keeping the chart's own numbers: "
+    "chest (chest or bust), waist, hips (or seat), shoulders, "
+    "sleeveLength (sleeve or arm length), torsoLength (garment/back/body length), "
+    "inseam (inside leg). Omit any key the chart does not have.\n"
+    "- If a cell is a range like \"90-95\", use the midpoint (92.5).\n"
+    "- Ignore columns that are not garment fit measurements: weight, age, foot, head, "
+    "recommended height ranges.\n"
+    "- `units`: \"cm\" or \"in\" — whichever the chart uses. Do NOT convert; give the raw numbers.\n"
+    "- `measurements`: \"body\" if these are the wearer's body measurements "
+    "(often a Body / Kroppsmatt tab), or \"garment\" if they are the flat garment's own "
+    "product measurements.\n"
+    "- `brand`: the brand name if visible, else empty.\n"
+    "- `found`: false if the image has no readable size chart.\n"
+    "Return only JSON."
+)
+
+VISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "found": {"type": "boolean"},
+        "brand": {"type": "string"},
+        "units": {"type": "string", "enum": ["cm", "in"]},
+        "measurements": {"type": "string", "enum": ["body", "garment"]},
+        "rows": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "size": {"type": "string"},
+                    "chest": {"type": "number"},
+                    "waist": {"type": "number"},
+                    "hips": {"type": "number"},
+                    "shoulders": {"type": "number"},
+                    "sleeveLength": {"type": "number"},
+                    "torsoLength": {"type": "number"},
+                    "inseam": {"type": "number"},
+                },
+                "required": ["size"],
+            },
+        },
+    },
+    "required": ["found", "rows"],
+}
+
+
+def _gemini_vision(mime, b64):
+    """POST the image to Gemini; return the model's parsed JSON, or raise."""
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": VISION_PROMPT},
+                {"inline_data": {"mime_type": mime, "data": b64}},
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0,
+            "responseMimeType": "application/json",
+            "responseSchema": VISION_SCHEMA,
+        },
+    }
+    url = (GEMINI_ENDPOINT % urllib.parse.quote(GEMINI_MODEL)) \
+        + "?key=" + urllib.parse.quote(GEMINI_API_KEY)
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST")
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=VISION_TIMEOUT, context=ctx) as r:
+        resp = json.loads(r.read().decode("utf-8", "replace"))
+    cands = resp.get("candidates") or []
+    if not cands:
+        raise ValueError("no candidates")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+    if not text:
+        raise ValueError("empty response")
+    return json.loads(text)
+
+
+def vision_size_chart(image):
+    """Read a size chart out of a screenshot (data URL) using Gemini vision."""
+    if not GEMINI_API_KEY:
+        return {"ok": False, "error": "Screenshot scanning isn't switched on for this server yet."}
+    if not isinstance(image, str) or not image:
+        return {"ok": False, "error": "No image was received."}
+
+    mime, b64 = "image/jpeg", image
+    m = re.match(r"data:([^;]+);base64,(.*)$", image, re.S)
+    if m:
+        mime, b64 = m.group(1), m.group(2)
+    if mime not in ("image/jpeg", "image/png", "image/webp"):
+        mime = "image/jpeg"
+    b64 = b64.strip()
+
+    try:
+        data = _gemini_vision(mime, b64)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = json.loads(e.read().decode("utf-8", "replace")).get("error", {}).get("message", "")
+        except Exception:
+            pass
+        if e.code == 429:
+            return {"ok": False, "error": "The scanner is busy right now — try again in a moment, or type the chart in."}
+        return {"ok": False, "error": "The scanner couldn't process that image (%s). Try a clearer screenshot, or type it in." % (detail or e.code)}
+    except Exception:
+        return {"ok": False, "error": "Couldn't read that screenshot. Make sure the numbers are clear, or type the chart in."}
+
+    if not data.get("found") or not isinstance(data.get("rows"), list):
+        return {"ok": False, "error": "No size chart found in that screenshot. Crop it to just the chart and try again, or type it in."}
+
+    to_cm = data.get("units") == "in"
+    sizes, order = {}, []
+    for row in data["rows"]:
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("size") or "").strip().upper()
+        if not label or label in sizes:
+            continue
+        vals = {}
+        for z in VISION_ZONES:
+            v = row.get(z)
+            if isinstance(v, (int, float)) and v > 0:
+                vals[z] = round(v * 2.54, 1) if to_cm else round(float(v), 1)
+        if vals:
+            sizes[label] = vals
+            order.append(label)
+
+    zones = sorted({z for v in sizes.values() for z in v}, key=VISION_ZONES.index)
+    if len(order) < 2 or not zones:
+        return {"ok": False, "error": "That screenshot didn't have enough of a chart to read. Include all the size rows and their numbers, or type it in."}
+
+    brand = (str(data.get("brand") or "").strip() or "Scanned guide")[:40]
+    measurements = data.get("measurements") if data.get("measurements") in ("body", "garment") else "body"
+    return {
+        "ok": True,
+        "brand": brand,
+        "source": None,
+        "units": "cm",
+        "measurements": measurements,
+        "zones": zones,
+        "sizeOrder": order,
+        "sizes": sizes,
     }
 
 
@@ -1426,6 +1599,18 @@ class Handler(SimpleHTTPRequestHandler):
                     result = battle_create(body)
                 else:
                     result = battle_close(body)
+            except Exception as e:
+                result = {"ok": False, "error": e.__class__.__name__}
+            self._json(result)
+            return
+        if parsed.path == "/api/size-chart/vision":
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                if length > MAX_IMAGE_CHARS + 4096:
+                    self._json({"ok": False, "error": "That screenshot is too large — try a smaller crop."})
+                    return
+                body = json.loads((self.rfile.read(length) or b"{}").decode("utf-8", "replace"))
+                result = vision_size_chart(body.get("image"))
             except Exception as e:
                 result = {"ok": False, "error": e.__class__.__name__}
             self._json(result)

@@ -132,7 +132,10 @@
     return nums[0];
   }
 
-  function openManualChartModal(garmentType, onDone) {
+  // `seed` (optional) is a chart-shaped object — e.g. what the screenshot
+  // scanner read — used to pre-fill the grid so the user just eyeballs and
+  // corrects it rather than typing from scratch.
+  function openManualChartModal(garmentType, onDone, seed) {
     // seed the columns from what this garment actually has a chart for, so a
     // top opens on Chest and jeans on Waist/Hips rather than a blank guess
     const seedZones = FitEngine.sizesFor(garmentType, userSex()).length
@@ -142,12 +145,30 @@
       mode: 'body',                       // 'body' | 'garment'
       active: {},
       labels: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
-      vals: {}                            // vals[label][zoneKey] = raw string
+      vals: {},                           // vals[label][zoneKey] = raw string
+      scanned: false                      // pre-filled from a screenshot scan?
     };
     (seedZones && seedZones.length ? seedZones : ['chest']).forEach(z => {
       if (MANUAL_ZONES.some(m => m[0] === z)) st.active[z] = true;
     });
     if (!Object.keys(st.active).length) st.active.chest = true;
+
+    if (seed && seed.sizes && Array.isArray(seed.sizeOrder) && seed.sizeOrder.length) {
+      st.scanned = true;
+      st.brand = (seed.brand && seed.brand !== 'Scanned guide') ? seed.brand : '';
+      st.mode = seed.measurements === 'garment' ? 'garment' : 'body';
+      st.active = {};
+      (seed.zones || []).forEach(z => { if (MANUAL_ZONES.some(m => m[0] === z)) st.active[z] = true; });
+      if (!Object.keys(st.active).length) st.active.chest = true;
+      st.labels = seed.sizeOrder.slice();
+      st.vals = {};
+      seed.sizeOrder.forEach((lab, i) => {
+        const cells = seed.sizes[lab] || {};
+        const row = {};
+        Object.keys(cells).forEach(z => { row[z] = String(cells[z]); });
+        st.vals[i] = row;
+      });
+    }
 
     const overlay = openModal('');
     const modal = overlay.querySelector('.modal');
@@ -198,8 +219,10 @@
     function render() {
       const zones = MANUAL_ZONES.filter(z => st.active[z[0]]);
       modal.innerHTML = `
-        <h3 class="card-title">Enter the size guide</h3>
-        <p class="muted small" style="margin-bottom:14px">Read the numbers off your screenshot of the brand's size guide and type them in. Ranges like <strong>90-95</strong> are fine. In centimetres.</p>
+        <h3 class="card-title">${st.scanned ? 'Check the scanned guide' : 'Enter the size guide'}</h3>
+        <p class="muted small" style="margin-bottom:14px">${st.scanned
+          ? "We read these off your screenshot — give them a quick check, fix anything that's off, then use it. In centimetres."
+          : "Read the numbers off your screenshot of the brand's size guide and type them in. Ranges like <strong>90-95</strong> are fine. In centimetres."}</p>
 
         <label class="field-label" for="mc-brand">Brand (optional)</label>
         <input class="input mb-12" id="mc-brand" type="text" value="${esc(st.brand)}" placeholder="e.g. ASOS">
@@ -1512,7 +1535,29 @@
           <button class="chip ${wiz.fitPref === 'relaxed' ? 'selected' : ''}" data-fit="relaxed">Relaxed / oversized</button>
         </div>
 
-        <div class="section-label">Use the brand's size guide (optional)</div>
+        <!-- Brand first. "What's my size" has no answer on its own —
+             a 96cm chest is a Uniqlo L, a Gap M and a COS S. Picking the
+             brand is what turns a body measurement into a size you can
+             actually buy. See js/brands.js. -->
+        <div class="section-label">Which brand?</div>
+        <p class="hint mb-8">Sizing belongs to the brand as much as to you. Pick one and we'll judge the fit by how <em>they</em> cut.</p>
+        <input class="input mb-8" id="wz-brand-q" type="search" placeholder="Search brands…" autocomplete="off" value="${esc(wiz.brandQuery || '')}">
+        <div class="chip-row mb-8" id="brand-chips">
+          ${(typeof Brands !== 'undefined'
+              ? (wiz.brandQuery ? Brands.search(wiz.brandQuery) : Brands.popular())
+              : []).slice(0, 14).map(b =>
+            `<button class="chip ${wiz.brandId === b.id ? 'selected' : ''}" data-brand="${esc(b.id)}">${esc(b.name)}</button>`
+          ).join('')}
+        </div>
+        ${(typeof Brands !== 'undefined' && wiz.brandId && wiz.brandId !== 'generic') ? (() => {
+          const d = Brands.drift(wiz.brandId, wiz.garmentType);
+          return `<div class="reco-banner mb-16" style="background:var(--surface);border:1px solid var(--border)">
+            <p class="small" style="margin:0 0 3px"><strong>${esc(d.brandName)} ${esc(d.verdict)}.</strong> ${esc(d.advice)}</p>
+            <p class="small muted" style="margin:0">${esc(d.note || '')}</p>
+          </div>`;
+        })() : ''}
+
+        <div class="section-label">Or use the brand's own size guide (optional)</div>
         ${wiz.customChart ? `
         <div class="reco-banner good" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="flex:1;min-width:200px">✓ Using <strong>${esc(wiz.customChart.brand)}</strong>'s own size guide — sizes ${esc(wiz.customChart.sizeOrder.join(', '))}</span>
@@ -1526,8 +1571,12 @@
         <p class="hint mb-8" id="chart-msg"></p>
         <div class="reco-banner mb-16" id="chart-fallback" style="display:none;background:var(--surface);border:1px solid var(--border)">
           <p class="small" style="margin:0 0 4px"><strong>That shop blocks automatic reading.</strong> Many do (Shein, ASOS, Zara…).</p>
-          <p class="small muted" style="margin:0 0 10px">Open the brand's <strong>size guide</strong> on their website, screenshot it so you can see the numbers, then pop them in here — it takes about ten seconds and works for any brand.</p>
-          <button class="btn btn-primary btn-sm" id="chart-manual" type="button">Enter it from the size guide</button>
+          <p class="small muted" style="margin:0 0 10px">Open the brand's <strong>size guide</strong> and screenshot it — FitChecker reads the numbers off the picture for you. Works for any brand.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-sm" id="chart-scan" type="button">Scan a screenshot</button>
+            <button class="btn btn-ghost btn-sm" id="chart-manual" type="button">Type it in instead</button>
+          </div>
+          <p class="hint" id="chart-scan-msg" style="margin:8px 0 0"></p>
         </div>`}
 
         <div class="section-label">Size you're considering (optional)</div>
@@ -1587,6 +1636,31 @@
       wiz.pickedSize = c.getAttribute('data-size');
       renderWizStep2();
     };
+    const brandChips = document.getElementById('brand-chips');
+    if (brandChips) brandChips.onclick = e => {
+      const c = e.target.closest('[data-brand]');
+      if (!c) return;
+      saveName();
+      const id = c.getAttribute('data-brand');
+      // Tapping the selected brand clears it, back to the generic chart.
+      wiz.brandId = (wiz.brandId === id) ? null : id;
+      renderWizStep2();
+    };
+    const brandQ = document.getElementById('wz-brand-q');
+    if (brandQ) {
+      let t;
+      brandQ.oninput = () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          saveName();
+          wiz.brandQuery = brandQ.value.trim();
+          renderWizStep2();
+          const again = document.getElementById('wz-brand-q');
+          // Re-render blows away focus mid-typing; put it back at the end.
+          if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+        }, 260);
+      };
+    }
     const fetchBtn = document.getElementById('chart-fetch');
     if (fetchBtn) fetchBtn.onclick = async () => {
       const urlInput = document.getElementById('wz-url');
@@ -1623,14 +1697,46 @@
         fetchBtn.textContent = 'Fetch guide';
       }
     };
+    const useChart = chart => {
+      wiz.customChart = chart;
+      if (wiz.pickedSize && !chart.sizes[wiz.pickedSize]) wiz.pickedSize = '';
+      toast('Using ' + chart.brand + "'s size guide!", 'ok');
+      renderWizStep2();
+    };
     const manualBtn = document.getElementById('chart-manual');
     if (manualBtn) manualBtn.onclick = () => {
       saveName();
-      openManualChartModal(wiz.garmentType, chart => {
-        wiz.customChart = chart;
-        if (wiz.pickedSize && !chart.sizes[wiz.pickedSize]) wiz.pickedSize = '';
-        toast('Using ' + chart.brand + "'s size guide!", 'ok');
-        renderWizStep2();
+      openManualChartModal(wiz.garmentType, useChart);
+    };
+    // screenshot → Gemini reads the chart → opens the grid pre-filled to confirm
+    const scanBtn = document.getElementById('chart-scan');
+    if (scanBtn) scanBtn.onclick = () => {
+      saveName();
+      const scanMsg = document.getElementById('chart-scan-msg');
+      Camera.pickImage({
+        onImage: async dataUrl => {
+          const btn = document.getElementById('chart-scan');
+          const setMsg = t => { const m = document.getElementById('chart-scan-msg'); if (m) m.textContent = t; };
+          try {
+            const img = await Wardrobe.compress(dataUrl, { maxDim: 1600, quality: 0.85 });
+            setMsg('Reading the chart from your screenshot…');
+            if (btn) btn.disabled = true;
+            const resp = await fetch('api/size-chart/vision', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: img })
+            });
+            const data = await resp.json();
+            if (btn) btn.disabled = false;
+            if (!data.ok) { setMsg('✕ ' + data.error); return; }
+            setMsg('');
+            openManualChartModal(wiz.garmentType, useChart, data);
+          } catch (e) {
+            if (btn) btn.disabled = false;
+            setMsg('✕ Could not reach the scanner. Try again, or type it in.');
+          }
+        },
+        onError: () => {}
       });
     };
     // arrived via the share sheet with a link waiting → read it automatically
@@ -1681,9 +1787,63 @@
     }
 
     if (!Money.canUse()) { Money.showPaywall(() => render()); return; }
+
+    /* Chart precedence: a chart scraped from the brand's own page beats
+       everything (it's their real numbers), then our modelled brand
+       chart, then the international standard. */
+    const brandChart = (!wiz.customChart && typeof Brands !== 'undefined' && wiz.brandId && wiz.brandId !== 'generic')
+      ? Brands.chartFor(wiz.brandId, wiz.garmentType, sex)
+      : null;
+    const chart = wiz.customChart || brandChart;
+
     // sex picks the size chart — women's and men's are cut to different bodies
-    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, wiz.customChart, sex);
+    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex);
     if (!result) { toast('Could not analyze this garment.', 'err'); return; }
+
+    /* The headline sentence is derived by running the wearer against
+       both the standard and the brand chart, so it can never contradict
+       the size recommended beside it. */
+    if (brandChart && typeof Brands !== 'undefined') {
+      const cmp = Brands.compare(wiz.garmentType, body, wiz.fitPref, sex, wiz.brandId);
+      if (cmp) {
+        result.brandCompare = { line: cmp.line, shift: cmp.shift, standardSize: cmp.standardSize };
+        result.brandConfidence = cmp.confidence;
+        result.brandId = wiz.brandId;
+        result.confidence = cmp.confidence.value;
+
+        /* Return risk answers the question underneath "what size am I"
+           — "am I going to have to send this back". It is computed from
+           the comparison we already have, so it costs nothing extra. */
+        if (typeof Returns !== 'undefined') {
+          result.returnRisk = Returns.assess(cmp, {
+            brandId: wiz.brandId, garmentType: wiz.garmentType
+          });
+          result.yourRecord = Returns.yourRecord(wiz.brandId);
+        }
+
+        /* The retailer's own chart is the only ground truth here, so
+           when the risk card says "go and check the measurement", the
+           link to check it sits right underneath. */
+        if (typeof SizeCharts !== 'undefined') {
+          result.sizeChart = SizeCharts.linkFor(wiz.brandId, wiz.garmentType);
+          result.whatToCheck = SizeCharts.whatToCheck(wiz.garmentType, result, body);
+        }
+      }
+    }
+    /* Log it to fit history. Return risk is only ever modelled until
+       the user tells us what actually happened, so the app has to ask —
+       and it can only ask about things it remembers recommending. */
+    if (typeof Returns !== 'undefined') {
+      Returns.record({
+        brandId: wiz.brandId || 'generic',
+        brandName: (typeof Brands !== 'undefined') ? Brands.get(wiz.brandId).name : '',
+        garmentType: wiz.garmentType,
+        garmentName: (wiz.garmentName || '').trim(),
+        size: result.bestSize,
+        risk: result.returnRisk ? result.returnRisk.score : null
+      });
+    }
+
     Money.consume(); // a fit check was produced
     Store.recordResponse({ garmentType: wiz.garmentType, fitPref: wiz.fitPref, pickedSize: wiz.pickedSize || '', newSex: wiz.newSex });
 
@@ -1793,12 +1953,24 @@
             <p class="muted small" style="margin-top:6px">
               ${esc(a.garmentName || r.garmentLabel)} · ${esc(r.fitPref)} fit · for ${esc(a.profileName)}
             </p>
-            ${r.brand ? `<p class="small" style="margin-top:4px">Judged against <a href="${esc(r.source || '#')}" target="_blank" rel="noopener">${esc(r.brand)}'s own size guide</a></p>` : ''}
-            <div class="small muted" style="margin-top:10px">Confidence — based on how many measurements you've provided</div>
+            ${r.brand ? (
+              /* Only claim "their own size guide" when we genuinely
+                 scraped one. A modelled brand chart is an informed
+                 estimate and has to say so — overstating the source is
+                 how a sizing app loses the trust it runs on. */
+              r.source && /^https?:/i.test(r.source)
+                ? `<p class="small" style="margin-top:4px">Judged against <a href="${esc(r.source)}" target="_blank" rel="noopener">${esc(r.brand)}'s own size guide</a></p>`
+                : `<p class="small" style="margin-top:4px">Judged against how <strong>${esc(r.brand)}</strong> actually cuts${r.brandConfidence ? ` · ${esc(r.brandConfidence.why)}` : ''}</p>`
+            ) : ''}
+            <div class="small muted" style="margin-top:10px">Confidence${r.brandConfidence ? '' : ' — based on how many measurements you\'ve provided'}</div>
             <div class="conf-track"><div class="conf-fill" style="width:${r.confidence}%"></div></div>
-            <div class="small muted" style="margin-top:4px">${r.confidence}%${r.confidence < 80 ? ' · add more measurements to raise this' : ''}</div>
+            <div class="small muted" style="margin-top:4px">${r.confidence}%${r.brandConfidence ? ' · ' + esc(r.brandConfidence.label) : (r.confidence < 80 ? ' · add more measurements to raise this' : '')}</div>
           </div>
         </div>
+
+        ${r.brandCompare ? `<div class="reco-banner ${r.brandCompare.shift === 0 ? 'good' : 'warn'}" style="font-size:15px">
+          ${esc(r.brandCompare.line)}
+        </div>` : ''}
 
         <div class="reco-banner ${recoGood ? 'good' : 'warn'}">
           ${recoGood
@@ -1806,6 +1978,43 @@
             : `→ Recommended size: <strong>${esc(r.bestSize)}</strong> (fit score ${r.bestScore})${r.pickedSize ? ` — better than ${esc(r.pickedSize)} for your measurements.` : '.'}`}
         </div>
       </div>
+
+      ${r.returnRisk ? `
+      <div class="card rr-card tone-${esc(r.returnRisk.band.tone)}">
+        <div class="card-title">
+          <div class="section-label" style="margin:0">Will it come back?</div>
+          <span class="rr-pill tone-${esc(r.returnRisk.band.tone)}">${r.returnRisk.band.emoji} ${esc(r.returnRisk.band.label)}</span>
+        </div>
+        <p class="mb-8">${esc(r.returnRisk.band.line)}</p>
+
+        <div class="rr-bar"><div class="rr-fill tone-${esc(r.returnRisk.band.tone)}" style="width:${r.returnRisk.score}%"></div></div>
+
+        ${r.yourRecord ? `<p class="rr-yours"><strong>Your record here:</strong> ${esc(r.yourRecord.line)}${
+          r.yourRecord.sizesKept.length ? ' Sizes that worked: ' + esc(r.yourRecord.sizesKept.join(', ')) + '.' : ''}</p>` : ''}
+
+        ${r.returnRisk.reasons.length ? `<div class="section-label" style="margin-top:16px">What's driving it</div>
+          ${r.returnRisk.reasons.map(x => `<p class="small mb-8"><strong>${esc(x.label)}:</strong> ${esc(x.line)}</p>`).join('')}` : ''}
+
+        <div class="section-label" style="margin-top:16px">What to do</div>
+        ${r.returnRisk.advice.map(a => `<div class="rr-do">
+          <strong>${esc(a.do)}</strong><span class="muted small">${esc(a.why)}</span>
+        </div>`).join('')}
+
+        ${r.whatToCheck ? `
+          <div class="section-label" style="margin-top:16px">How to check it yourself</div>
+          <ol class="chart-steps">
+            ${r.whatToCheck.steps.map(x => `<li>${esc(x)}</li>`).join('')}
+          </ol>` : ''}
+
+        ${r.sizeChart ? (r.sizeChart.kind === 'own'
+          ? `<p class="small chart-own">${esc(r.sizeChart.note)}</p>`
+          : `<a class="btn btn-secondary btn-block chart-btn" href="${esc(r.sizeChart.url)}" target="_blank" rel="noopener">
+               &#128207; ${esc(r.sizeChart.label)}
+             </a>
+             <p class="hint">${esc(r.sizeChart.note)}</p>`) : ''}
+
+        <p class="small muted rr-basis">${esc(r.returnRisk.basis)}</p>
+      </div>` : ''}
 
       ${(typeof RECS !== 'undefined' && Array.isArray(RECS) && RECS.some(i => i.types.includes(r.garmentType))) ? `
       <div class="promo-card promo-card-hero">
@@ -1911,7 +2120,7 @@
         ${isGuest ? '' : '<button class="btn btn-danger btn-sm" id="res-delete" style="margin-left:auto">Delete</button>'}
       </div>
 
-      ${Money.bannerHTML('content')}`;
+      ${Ads.slot('result', { kind: 'video' })}`;
 
     wirePromo();
     Money.wireAds(view);
@@ -3260,6 +3469,75 @@
     return `<svg class="prog-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Measurement trend chart">${grid}${lines}${xLabels}</svg>`;
   }
 
+  /* ============================================================
+     WHAT ACTUALLY HAPPENED
+
+     Every other number in FitCheck is modelled. This is the only
+     place real evidence can enter, and it only enters if the app
+     asks — so it asks, once, about things it recommended, and it
+     never nags. Two logged outcomes with a brand is enough to start
+     showing your own record instead of the model's guess, because
+     your own history with a brand beats any model of it.
+     ============================================================ */
+  function fitHistoryHTML() {
+    if (typeof Returns === 'undefined') return '';
+    const all = Returns.history();
+    if (!all.length) return '';
+    const unanswered = all.filter(e => !e.outcome).slice(0, 5);
+    const answered = all.filter(e => e.outcome);
+
+    return `
+      <div class="card">
+        <div class="card-title">Did they fit?</div>
+        ${unanswered.length ? `
+          <p class="muted small mb-8">Telling FitCheck what happened is the only thing that turns a guess into your own record.</p>
+          ${unanswered.map(e => `
+            <div class="fh-row" data-fh="${esc(e.id)}">
+              <div class="fh-main">
+                <strong>${esc(e.garmentName || e.brandName || 'Fit check')}</strong>
+                <span class="muted small">${esc(e.brandName || '')}${e.size ? ' · size ' + esc(e.size) : ''}</span>
+              </div>
+              <div class="fh-btns">
+                <button class="btn btn-ghost fh-btn" data-out="kept" data-id="${esc(e.id)}">Kept it</button>
+                <button class="btn btn-ghost fh-btn" data-out="returned" data-id="${esc(e.id)}">Sent back</button>
+              </div>
+            </div>`).join('')}`
+        : '<p class="muted small">Nothing waiting on an answer.</p>'}
+
+        ${answered.length ? `
+          <div class="section-label" style="margin-top:18px">Your record</div>
+          ${brandRecordsHTML(answered)}` : ''}
+      </div>`;
+  }
+
+  function brandRecordsHTML(answered) {
+    const byBrand = {};
+    answered.forEach(e => { (byBrand[e.brandId] = byBrand[e.brandId] || []).push(e); });
+    const rows = Object.keys(byBrand).map(id => Returns.yourRecord(id)).filter(Boolean);
+    if (!rows.length) {
+      const kept = answered.filter(e => e.outcome === 'kept').length;
+      return `<p class="small">${kept} of ${answered.length} kept so far. Log a couple more and FitCheck can start showing your record per brand.</p>`;
+    }
+    return Object.keys(byBrand).map(id => {
+      const rec = Returns.yourRecord(id);
+      if (!rec) return '';
+      const name = (byBrand[id][0] || {}).brandName || id;
+      return `<div class="fh-brand">
+        <div class="fh-brand-top"><strong>${esc(name)}</strong><span class="fh-pct">${rec.pct}% kept</span></div>
+        <div class="rr-bar"><div class="rr-fill ${rec.pct >= 70 ? '' : 'tone-warn'}" style="width:${rec.pct}%"></div></div>
+        <span class="muted small">${esc(rec.line)}${rec.sizesKept.length ? ' Sizes that worked: ' + esc(rec.sizesKept.join(', ')) + '.' : ''}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function wireFitHistory() {
+    view.querySelectorAll('.fh-btn').forEach(b => b.onclick = () => {
+      Returns.setOutcome(b.dataset.id, b.dataset.out);
+      toast(b.dataset.out === 'kept' ? 'Logged — good to know 👍' : 'Logged. That makes the next call sharper.', 'ok');
+      renderProgress();
+    });
+  }
+
   function renderProgress() {
     const u = Auth.user();
     const scans = Store.getScans(u ? u.email : 'guest');
@@ -3336,7 +3614,8 @@
         ${Money.proCardHTML()}`;
     }
 
-    view.innerHTML = latestCard + historySection + Money.bannerHTML('progress');
+    view.innerHTML = latestCard + historySection + fitHistoryHTML() + Money.bannerHTML('progress');
+    wireFitHistory();
     Money.wireProCard(view);
     Money.wireAds(view);
   }

@@ -1,0 +1,424 @@
+/* ============================================================
+   money.css — shared styling for the new commerce + account UI.
+   Dropped into all six apps unchanged. It borrows each app's
+   own custom properties (--accent, --surface, --line …) so it
+   picks up the host theme automatically; every var has a
+   fallback so it still looks right if one is missing.
+
+   Load it AFTER the app's own styles.css.
+   ============================================================ */
+
+/* ---------- the lock: blurred paid payload ---------- */
+.is-locked { position: relative; }
+.is-locked > *:not(.lock-veil) {
+  filter: blur(9px) saturate(0.7);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+.lock-veil {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px;
+  border-radius: var(--radius, 18px);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg, #111) 35%, transparent),
+    color-mix(in srgb, var(--bg, #111) 88%, transparent));
+  backdrop-filter: blur(2px);
+}
+.lock-card {
+  text-align: center; max-width: 320px; width: 100%;
+  background: var(--surface, #1a1a1f);
+  border: 1px solid var(--line, rgba(255,255,255,0.12));
+  border-radius: var(--radius, 18px);
+  padding: 22px 20px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  animation: lockIn 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes lockIn { from { transform: translateY(10px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+.lock-icon {
+  width: 42px; height: 42px; margin: 0 auto 12px;
+  display: grid; place-items: center;
+  border-radius: 50%; font-size: 18px;
+  color: var(--accent, #c9a6f0);
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #c9a6f0) 30%, transparent);
+}
+.lock-card h4 { font-size: 17px; margin-bottom: 6px; line-height: 1.25; }
+.lock-card p { font-size: 13px; margin-bottom: 14px; }
+.lock-card .btn { width: 100%; }
+.lock-card .btn-sm { margin-top: 8px; font-size: 12.5px; padding: 8px; }
+
+/* a slimmer inline variant for locking a single row */
+.lock-inline {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: 12px;
+  border: 1px dashed var(--line, rgba(255,255,255,0.14));
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 6%, transparent);
+  font-size: 13px; cursor: pointer;
+}
+.lock-inline:hover { border-color: color-mix(in srgb, var(--accent, #c9a6f0) 45%, transparent); }
+.lock-inline .li-mark { color: var(--accent, #c9a6f0); }
+
+/* ---------- plan picker ---------- */
+.plan-picker { display: flex; flex-direction: column; gap: 9px; margin: 16px 0 14px; }
+.plan-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 13px 14px; border-radius: 14px;
+  background: var(--surface-2, rgba(255,255,255,0.04));
+  border: 1.5px solid var(--line, rgba(255,255,255,0.12));
+  color: inherit; font: inherit;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.12s ease;
+}
+.plan-row:hover { border-color: color-mix(in srgb, var(--accent, #c9a6f0) 45%, transparent); }
+.plan-row:active { transform: scale(0.99); }
+.plan-row.picked {
+  border-color: var(--accent, #c9a6f0);
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 10%, transparent);
+}
+.plan-tick {
+  flex: none; width: 19px; height: 19px; border-radius: 50%;
+  border: 2px solid var(--line, rgba(255,255,255,0.25));
+  display: grid; place-items: center;
+}
+.plan-row.picked .plan-tick { border-color: var(--accent, #c9a6f0); }
+.plan-row.picked .plan-tick::after {
+  content: ''; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent, #c9a6f0);
+}
+.plan-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.plan-label { font-weight: 600; font-size: 14.5px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.plan-save {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 100px;
+  color: var(--bg, #111);
+  background: var(--accent, #c9a6f0);
+}
+.plan-note { font-size: 12px; color: var(--muted, #999); }
+.plan-price { flex: none; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.plan-price span { font-size: 11.5px; color: var(--muted, #999); font-weight: 400; }
+.plan-sep {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted, #999); margin: 3px 0;
+}
+.plan-sep::before, .plan-sep::after { content: ''; flex: 1; height: 1px; background: var(--line, rgba(255,255,255,0.12)); }
+
+/* ---------- trial confirmation pop ---------- */
+.trial-pop {
+  position: fixed; inset: 0; z-index: 800;
+  display: grid; place-items: center; pointer-events: none;
+  background: rgba(0,0,0,0.42);
+  animation: fadeIn 0.2s ease both;
+}
+.trial-pop.leaving { animation: fadeOut 0.3s ease both; }
+.trial-pop-in {
+  text-align: center; padding: 26px 30px;
+  border-radius: 20px;
+  background: var(--surface, #1a1a1f);
+  border: 1px solid color-mix(in srgb, var(--accent, #c9a6f0) 35%, transparent);
+  box-shadow: 0 22px 60px rgba(0,0,0,0.5);
+  animation: popIn 0.45s cubic-bezier(0.2, 1.2, 0.3, 1) both;
+}
+.trial-pop-in strong { display: block; font-size: 17px; margin-bottom: 4px; }
+.trial-pop-in span { display: block; font-size: 13px; color: var(--muted, #999); }
+.tp-mark {
+  font-size: 30px; color: var(--accent, #c9a6f0); margin-bottom: 8px;
+  animation: spinPop 0.7s ease both;
+}
+@keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes spinPop { from { transform: rotate(-120deg) scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---------- account / email capture sheet ---------- */
+.acct-sheet-scrim {
+  position: fixed; inset: 0; z-index: 700;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fadeIn 0.2s ease both;
+}
+.acct-sheet-scrim.leaving { animation: fadeOut 0.2s ease both; }
+.acct-sheet {
+  width: 100%; max-width: 480px;
+  background: var(--surface, #1a1a1f);
+  border: 1px solid var(--line, rgba(255,255,255,0.12));
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  animation: sheetUp 0.34s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  position: relative;
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (min-width: 560px) {
+  .acct-sheet-scrim { align-items: center; }
+  .acct-sheet { border-radius: 22px; border-bottom: 1px solid var(--line, rgba(255,255,255,0.12)); }
+  @keyframes sheetUp { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+.acct-x {
+  position: absolute; top: 14px; right: 14px;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--surface-2, rgba(255,255,255,0.06));
+  border: 1px solid var(--line, rgba(255,255,255,0.12));
+  color: var(--muted, #999); font-size: 18px; line-height: 1; cursor: pointer;
+}
+.acct-head { text-align: center; margin-bottom: 16px; }
+.acct-emoji { font-size: 26px; margin-bottom: 8px; color: var(--accent, #c9a6f0); }
+.acct-head h3 { font-size: 19px; margin-bottom: 5px; }
+.acct-head p { font-size: 13px; color: var(--muted, #999); }
+.acct-field {
+  width: 100%; padding: 13px 14px; margin-bottom: 10px;
+  border-radius: 13px; font: inherit; font-size: 15px;
+  background: var(--bg-2, rgba(0,0,0,0.25));
+  border: 1.5px solid var(--line, rgba(255,255,255,0.12));
+  color: var(--text, #eee);
+}
+.acct-field:focus { outline: none; border-color: var(--accent, #c9a6f0); }
+.acct-field.code { text-align: center; letter-spacing: 0.5em; font-size: 20px; font-weight: 600; padding-left: 0.5em; }
+.acct-sheet .btn { width: 100%; }
+.acct-fine { font-size: 11.5px; color: var(--muted, #999); text-align: center; margin-top: 12px; line-height: 1.5; }
+.acct-err { font-size: 12.5px; color: var(--danger, #e0836f); text-align: center; margin-top: 8px; min-height: 17px; }
+.acct-alt { background: none; border: none; color: var(--accent, #c9a6f0); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; margin-top: 10px; width: 100%; }
+
+/* signed-in row for settings */
+.acct-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 14px; border-radius: 14px;
+  background: var(--surface-2, rgba(255,255,255,0.04));
+  border: 1px solid var(--line, rgba(255,255,255,0.12));
+}
+.acct-avatar {
+  flex: none; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 700; font-size: 15px;
+  color: var(--bg, #111); background: var(--accent, #c9a6f0);
+}
+.acct-who { flex: 1; min-width: 0; }
+.acct-who strong { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-who span { font-size: 12px; color: var(--muted, #999); }
+.acct-badge {
+  flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 4px 9px; border-radius: 100px;
+  color: var(--accent, #c9a6f0);
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #c9a6f0) 30%, transparent);
+}
+
+/* ---------- reminders ---------- */
+.rem-list { display: flex; flex-direction: column; gap: 9px; }
+.rem-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 14px;
+  background: var(--surface-2, rgba(255,255,255,0.04));
+  border: 1px solid var(--line, rgba(255,255,255,0.12));
+}
+.rem-when {
+  flex: none; text-align: center; min-width: 46px;
+  padding: 5px 7px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 12%, transparent);
+}
+.rem-when b { display: block; font-size: 16px; line-height: 1; }
+.rem-when span { display: block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted, #999); margin-top: 2px; }
+.rem-body { flex: 1; min-width: 0; }
+.rem-body strong { display: block; font-size: 14px; }
+.rem-body span { font-size: 12px; color: var(--muted, #999); }
+.rem-soon .rem-when { background: color-mix(in srgb, var(--gold, #e8cf9a) 20%, transparent); }
+.rem-x {
+  flex: none; background: none; border: none; cursor: pointer;
+  color: var(--muted, #999); font-size: 17px; padding: 4px 6px; border-radius: 8px;
+}
+.rem-x:hover { color: var(--danger, #e0836f); }
+.rem-empty { text-align: center; padding: 24px 16px; color: var(--muted, #999); font-size: 13px; }
+
+/* permission nudge */
+.notif-nudge {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; border-radius: 14px; margin-bottom: 12px;
+  background: color-mix(in srgb, var(--accent, #c9a6f0) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #c9a6f0) 26%, transparent);
+  font-size: 13px;
+}
+.notif-nudge .btn { width: auto; flex: none; padding: 7px 13px; font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lock-card, .trial-pop-in, .tp-mark, .acct-sheet, .trial-pop { animation: none !important; }
+}
+
+/* ============================================================
+   ADS — image + video placements, shared across every app.
+
+   Each app supplies its own --surface / --line / --accent, so these
+   inherit the host look automatically; every var carries a fallback
+   so a missing one can't produce an unstyled box. (Two apps were
+   rendering ad markup with no styling at all before this moved here.)
+
+   The ad must always be visibly an ad. Every unit carries a label,
+   and none of them imitate a real card closely enough to be mistaken
+   for the app's own content — a fake-native ad earns one click and
+   loses the user.
+   ============================================================ */
+/* An unfilled slot is a bare 1px shell: invisible, but still laid out.
+   It must NOT be display:none — the fill is triggered by an
+   IntersectionObserver, and a display:none element never intersects
+   anything, so hiding the empty shell means the ad can never load at
+   all. It takes up no visible space until it has something in it. */
+.ad-wrap { position: relative; min-height: 1px; }
+.ad-wrap[data-ad-filled] {
+  border-radius: var(--radius-sm, 16px);
+  border: 1px solid var(--line, rgba(128,128,128,.2));
+  background: var(--surface-2, rgba(128,128,128,.06));
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.ad-tag {
+  position: absolute; top: 8px; right: 10px; z-index: 2;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted, #8a8a8a);
+  background: color-mix(in srgb, var(--surface, #fff) 78%, transparent);
+  padding: 2px 7px; border-radius: 6px; backdrop-filter: blur(4px);
+}
+
+/* ---------- house / affiliate creative ---------- */
+.ad-house { display: block; text-decoration: none; color: inherit; }
+.ad-media-wrap { position: relative; background: var(--surface-2, rgba(128,128,128,.08)); line-height: 0; }
+.ad-media { display: block; width: 100%; height: auto; object-fit: cover; }
+.ad-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.45); color: #fff; font-size: 15px; backdrop-filter: blur(3px);
+  pointer-events: none; opacity: 0; transition: opacity .3s;
+}
+@media (prefers-reduced-motion: reduce) { .ad-play { opacity: 1; } }
+.ad-copy { padding: 13px 15px 15px; display: flex; flex-direction: column; gap: 3px; }
+.ad-copy strong { font-family: var(--disp, inherit); font-size: 15.5px; line-height: 1.3; }
+.ad-copy span { font-size: 13px; color: var(--muted, #8a8a8a); line-height: 1.45; }
+.ad-cta { color: var(--accent-ink, var(--accent, #888)) !important; font-weight: 800; margin-top: 4px; }
+.ad-house:active { transform: scale(.99); }
+
+/* In-feed keeps the media small and the copy beside it, so it reads as
+   a recommendation rather than a billboard. Video slots go full-width
+   16:9, where a video actually earns its place. */
+.ad-inline .ad-media-wrap { aspect-ratio: 16/9; }
+.ad-video .ad-media-wrap { aspect-ratio: 16/9; }
+.ad-anchor .ad-house { display: flex; align-items: center; gap: 11px; }
+.ad-anchor .ad-media-wrap { width: 62px; height: 62px; flex: none; border-radius: 12px; overflow: hidden; }
+.ad-anchor .ad-media { height: 100%; }
+.ad-anchor .ad-copy { padding: 0; flex: 1; min-width: 0; }
+.ad-anchor .ad-copy strong { font-size: 14px; }
+.ad-anchor .ad-copy span { font-size: 12px; }
+
+/* ---------- Pro upsell fallback ---------- */
+.ad-ph { cursor: pointer; padding: 18px 16px; }
+.ad-ph-inner { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.ad-ph-inner > span:first-child { font-family: var(--disp, inherit); font-size: 15px; font-weight: 700; color: var(--ink-soft, var(--text, #444)); }
+.ad-ph-sub { font-size: 12px; color: var(--muted, #8a8a8a); }
+
+/* ---------- sticky anchor ---------- */
+.ad-anchor {
+  position: fixed; left: 50%; z-index: 44;
+  /* Sits ABOVE the bottom nav, never over it. The nav is how people
+     leave a screen; covering it to show an ad is indefensible. */
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  width: calc(100% - 28px); max-width: 460px;
+  transform: translateX(-50%) translateY(140%);
+  transition: transform .35s cubic-bezier(.2,.9,.25,1);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line-2, rgba(128,128,128,.3));
+  border-radius: 18px; padding: 10px 12px;
+  box-shadow: 0 14px 40px -14px rgba(0,0,0,.45);
+}
+.ad-anchor.in { transform: translateX(-50%) translateY(0); }
+.ad-anchor .ad-tag { top: -9px; right: 12px; border: 1px solid var(--line, rgba(128,128,128,.2)); }
+.ad-anchor-x {
+  position: absolute; top: -10px; left: -8px; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--line-2, rgba(128,128,128,.3)); background: var(--surface, #fff);
+  color: var(--muted, #888); font-size: 12px; cursor: pointer; line-height: 1;
+}
+
+/* ---------- full-screen interstitial ---------- */
+.ad-full {
+  position: fixed; inset: 0; z-index: 950; display: grid; place-items: center;
+  background: rgba(0,0,0,.72); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .25s;
+}
+.ad-full.in { opacity: 1; }
+.ad-full-inner { position: relative; width: min(92vw, 420px); }
+.ad-full-body { background: var(--surface, #fff); border-radius: 22px; overflow: hidden; }
+.ad-full-x {
+  position: absolute; top: -44px; right: 0;
+  background: rgba(255,255,255,.14); color: #fff; border: 0;
+  padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.ad-full-x:disabled { opacity: .55; cursor: default; }
+
+/* ---------- rewarded ---------- */
+.rw-video { width: 100%; border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
+.rw-video .ad-media-wrap { aspect-ratio: 16/9; }
+
+/* Ads never print. */
+@media print { .ad-wrap, .ad-anchor, .ad-full { display: none !important; } }
+
+/* ============================================================
+   CROSS-APP FAMILY
+
+   Deliberately styled as a recommendation, not an ad: no "AD" tag,
+   because it is not sold inventory, but a visible dismiss so it can
+   never feel like something you are stuck with.
+   ============================================================ */
+.fam-card {
+  position: relative;
+  border-radius: var(--radius-sm, 16px);
+  border: 1px solid color-mix(in srgb, var(--accent, #888) 26%, transparent);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent, #888) 9%, var(--surface, #fff)), var(--surface, #fff));
+  padding: 17px 18px; margin-bottom: 16px;
+}
+.fam-x {
+  position: absolute; top: 9px; right: 10px;
+  width: 26px; height: 26px; border-radius: 50%; border: 0;
+  background: transparent; color: var(--muted, #888); font-size: 17px; line-height: 1; cursor: pointer;
+}
+.fam-x:hover { background: var(--surface-2, rgba(128,128,128,.12)); }
+.fam-top { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
+.fam-emoji { font-size: 26px; flex: none; }
+.fam-head { display: flex; flex-direction: column; }
+.fam-head strong { font-family: var(--disp, inherit); font-size: 17px; }
+.fam-tag { font-size: 12.5px; color: var(--muted, #888); }
+.fam-why { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+.fam-go { display: inline-block; font-weight: 800; font-size: 14px;
+  color: var(--accent-ink, var(--accent, #888)); text-decoration: none; }
+.fam-aa { font-size: 12.5px; color: var(--muted, #888); margin-top: 10px; }
+
+.fam-list { display: flex; flex-direction: column; gap: 8px; }
+.fam-row { display: flex; align-items: center; gap: 13px; padding: 12px 14px;
+  border-radius: 14px; background: var(--surface-2, rgba(128,128,128,.07));
+  text-decoration: none; color: inherit; }
+.fam-row-main { flex: 1; display: flex; flex-direction: column; }
+.fam-row-main strong { font-size: 14.5px; }
+.fam-row-main span { font-size: 12.5px; color: var(--muted, #888); line-height: 1.4; }
+.fam-arrow { color: var(--muted, #888); flex: none; }
+
+/* ---------- backup ---------- */
+.bk-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.bk-size { font-size: 12.5px; color: var(--muted, #888); }
+.bk-nudge { border-color: color-mix(in srgb, var(--warn, #e8a33d) 38%, transparent); }
+
+/* A text button that reads as a link. Six of the seven apps used this
+   class without ever defining it, so it fell back to the browser's
+   default button chrome — a white box, glaringly wrong in dark mode.
+
+   Wrapped in :where() so it carries ZERO specificity: any app that
+   defines its own .linklike still wins, and this only fills the gap
+   for the ones that never did. */
+:where(.linklike) {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-ink, var(--accent, #888));
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+:where(.linklike):hover { opacity: .8; }
