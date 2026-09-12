@@ -25,6 +25,10 @@ echo "── size ledger ──────────────────�
 node tests/test_ledger.js
 
 echo
+echo "── measurement staleness ───────────────────"
+node tests/test_staleness.js
+
+echo
 echo "── server ──────────────────────────────────"
 python3 tests/test_server.py
 

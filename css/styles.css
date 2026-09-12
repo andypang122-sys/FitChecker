@@ -793,6 +793,26 @@ textarea.input { resize: vertical; min-height: 76px; }
 .fb-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .fb-btn { flex: 1 1 auto; min-width: 120px; }
 
+/* Ageing measurements. Loud enough to be read, quiet enough that
+   somebody six months out doesn't feel told off. */
+.stale-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.stale-note span { flex: 1 1 200px; }
+.stale-note.tone-warn { background: var(--warn-soft); color: var(--warn-ink); }
+.stale-note.tone-bad  { background: var(--bad-soft);  color: var(--bad-ink); }
+
+.sub.age-ageing, .sub.age-stale, .sub.age-unknown { color: var(--warn); font-weight: 600; }
+.sub.age-stale { color: var(--bad); }
+
 /* Brand + size on a wardrobe item. */
 .item-label { font-size: 14px; margin: 8px 0 0; }
 .item-label .linklike { margin-left: 8px; font-size: 13px; }

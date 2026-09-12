@@ -50,6 +50,7 @@ then open **http://localhost:8000** in your browser. `server.py` (Python 3, no d
 | **Brand reputation** | Fit reports are also shared anonymously — brand, garment, size and outcome, nothing else — so "this brand runs small" becomes a fact instead of a rumour. |
 | **Second-hand check** | Paste any Vinted / Depop / eBay / Grailed listing. It reads the seller's own measurements out of the free text — "pit to pit 56cm, length 68cm" — doubles the flat ones into real garment girths, and answers the only question that matters when there are no returns: will *this* garment fit *you*. |
 | **Proven by your closet** | Every wardrobe item records its brand and the size on the label, so the Size Passport can show the sizes you have actually proved fit — grouped per brand and per top/bottom/outerwear, with worn garments counting for more than unworn ones. It also flags brands that sold you two different sizes. |
+| **Measurements that expire** | Bodies move, and a verdict computed from two-year-old numbers used to claim exactly the same confidence as one computed from today's. Measurements now carry the date they were taken, their age comes off the confidence score (nothing under six months, capped at 25 points so old numbers are never treated as worthless), the result says plainly how old they are, and a re-measure reminder is scheduled twice a year. |
 | **Fit map** | A body silhouette colored by zone so you see problem areas at a glance. |
 | **History** | Every fit check is saved to your account — reopen any past verdict. |
 | **Units** | Switch between cm and inches anywhere in Settings. |
@@ -91,6 +92,7 @@ FitChecker/
 │   ├── fit-engine.js   size charts, fit math, real-world size labels
 │   ├── fit-feedback.js "did it fit?" reports + personal calibration
 │   ├── resale.js       reads seller measurements out of a listing
+│   ├── staleness.js    how old the measurements are, and what that costs
 │   ├── wardrobe.js     the closet (IndexedDB) + the per-brand size ledger
 │   ├── camera.js       live camera + upload + image compression
 │   └── app.js          views, routing, analyze wizard, results

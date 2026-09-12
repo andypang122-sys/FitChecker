@@ -673,7 +673,8 @@
 
       // If a guest typed measurements before signing up, save them as a profile.
       if (guestBody && !res.user.profiles.length) {
-        res.user.profiles.push({ id: Store.uid(), name: 'Me', sex: guestSex(), body: guestBody, photos: { face: null, body: null }, createdAt: Date.now() });
+        res.user.profiles.push({ id: Store.uid(), name: 'Me', sex: guestSex(), body: guestBody, photos: { face: null, body: null },
+          createdAt: guestBody.measuredAt || Date.now() });
         res.user.activeProfileId = res.user.profiles[0].id;
         Auth.save();
         toast('Your measurements were saved to your new account.', 'ok');
@@ -1070,6 +1071,7 @@
             <span class="row-main">
               <span class="title">${esc(p.name)} ${isActive ? '<span class="badge">Active</span>' : ''}</span>
               <span class="sub">${disp(p.body.height)} ${units()} · chest ${disp(p.body.chest)} · waist ${disp(p.body.waist)} · hips ${disp(p.body.hips)}</span>
+              <span class="sub age-${esc(stalenessOf(p).band)}">${esc(stalenessOf(p).label)}</span>
             </span>
             <span class="btn-row">
               ${isActive ? '' : `<button class="btn btn-secondary btn-sm" data-activate="${esc(p.id)}">Use</button>`}
@@ -1132,6 +1134,58 @@
       body[f.key] = val;
     }
     return body;
+  }
+
+  /* Stamp when these numbers were actually taken.
+     Only when they CHANGED: re-saving a profile to fix a typo in the name
+     must not reset the clock and quietly bless two-year-old numbers as
+     fresh. An unchanged save keeps the old date. */
+  function stampMeasurements(body, previousBody) {
+    if (!body) return body;
+    const unchanged = previousBody && !Staleness.changed(previousBody, body);
+    body.measuredAt = unchanged
+      ? (previousBody.measuredAt || Date.now())
+      : Date.now();
+    return body;
+  }
+
+  /* When a profile's measurements were taken. Profiles written before
+     this was recorded fall back to when the profile was created — the
+     latest date they could possibly have been measured. */
+  function measuredAtOf(profile) {
+    if (!profile) return null;
+    const b = profile.body || {};
+    return b.measuredAt || profile.createdAt || null;
+  }
+
+  function stalenessOf(profile) {
+    return Staleness.check(measuredAtOf(profile));
+  }
+
+  /* Keep one standing "re-measure" reminder in step with the numbers.
+     Re-run whenever they change, so a fresh measurement pushes the next
+     ask out six months instead of firing on the old schedule.
+
+     Remind can only fire when the app is next opened (see its own honest
+     limits), which suits this perfectly: a re-measure prompt is worth
+     nothing on a locked phone and everything the moment someone is
+     standing in the app about to trust an old number. */
+  function syncMeasureReminder() {
+    if (typeof Remind === 'undefined' || typeof Staleness === 'undefined') return;
+    const u = Auth.user();
+    const at = u ? measuredAtOf(getActiveProfile())
+                 : (guestBody && guestBody.measuredAt) || null;
+
+    Remind.cancelKind(Staleness.REMIND_KIND);
+    if (!at) return;   // nothing measured yet — nothing to go stale
+
+    Remind.inDays(Staleness.nextCheckDays(at), {
+      id: Staleness.REMIND_KIND,
+      kind: Staleness.REMIND_KIND,
+      every: Staleness.REMIND_EVERY_DAYS,
+      title: 'Time to re-measure',
+      body: 'Your measurements are getting on. Two minutes with a tape keeps every fit check honest.'
+    });
   }
 
   /* ---------- AI body scan — camera fills the measurement fields ---------- */
@@ -1286,16 +1340,18 @@
       if (existing) {
         existing.name = name;
         existing.sex = sexVal;
-        existing.body = body;
+        existing.body = stampMeasurements(body, existing.body);
         existing.photos = photos;
       } else {
-        const np = { id: Store.uid(), name, sex: sexVal, body, photos, createdAt: Date.now() };
+        const np = { id: Store.uid(), name, sex: sexVal, body: stampMeasurements(body),
+                     photos, createdAt: Date.now() };
         u.profiles.push(np);
         if (!u.activeProfileId) u.activeProfileId = np.id;
       }
 
       if (saveOrWarn()) {
         pushProfiles();
+        syncMeasureReminder();
         toast(existing ? 'Profile saved.' : 'Profile created!', 'ok');
         renderProfiles();
         render();
@@ -1436,7 +1492,8 @@
         if (!name) { toast('Give this profile a name first.', 'err'); return; }
         if (!wiz.newSex) { toast('Pick female or male sizing.', 'err'); return; }
         if (!canAddProfile()) return;
-        const np = { id: Store.uid(), name, sex: wiz.newSex, body, photos: { face: null, body: null }, createdAt: Date.now() };
+        const np = { id: Store.uid(), name, sex: wiz.newSex, body: stampMeasurements(body),
+                     photos: { face: null, body: null }, createdAt: Date.now() };
         u.profiles.push(np);
         if (!u.activeProfileId) u.activeProfileId = np.id;
         if (!saveOrWarn()) return;
@@ -1444,7 +1501,8 @@
         wiz.profileId = np.id;
         toast(`${name} is on the books — next time it's one tap.`, 'ok');
       } else {
-        prof.body = body; // any adjustments flow back into the saved profile
+        // Adjustments here are a re-measure, so they reset the clock.
+        prof.body = stampMeasurements(body, prof.body);
         if (!saveOrWarn()) return;
         pushProfiles();
       }
@@ -1492,7 +1550,7 @@
     const saveHint = document.getElementById('wiz-save-hint');
     if (saveHint) saveHint.onclick = () => {
       const typed = collectMeasurements('gm');
-      if (typed) { guestBody = typed; Store.saveGuestBody(typed); } // keep what they typed
+      if (typed) { guestBody = stampMeasurements(typed, guestBody); Store.saveGuestBody(guestBody); } // keep what they typed
       if (sexVal) setGuestSex(sexVal);
       requireAuth('Save named profiles', 'Your measurements are already saved on this device. A free account adds named profiles for several people, plus photos and history.');
     };
@@ -1501,9 +1559,10 @@
       if (!sexVal) { toast('Pick female or male sizing first.', 'err'); return; }
       const body = collectMeasurements('gm');
       if (!body) return;
-      guestBody = body;
+      guestBody = stampMeasurements(body, guestBody);
       setGuestSex(sexVal);
-      Store.saveGuestBody(body); // auto-save: a refresh never loses these
+      Store.saveGuestBody(guestBody); // auto-save: a refresh never loses these
+      syncMeasureReminder();
       wiz.step = 2;
       renderAnalyze();
     };
@@ -1772,7 +1831,7 @@
 
   function runAnalysis() {
     const u = Auth.user();
-    let body, profileName, profileId, sex;
+    let body, profileName, profileId, sex, measuredAt;
 
     if (u && u.profiles.length && wiz.profileId) {
       const profile = u.profiles.find(p => p.id === wiz.profileId) || u.profiles[0];
@@ -1780,12 +1839,14 @@
       profileName = profile.name;
       profileId = profile.id;
       sex = profile.sex;
+      measuredAt = measuredAtOf(profile);
     } else {
       if (!guestBody) { wiz.step = 1; renderAnalyze(); return; }
       body = guestBody;
       profileName = 'You';
       profileId = null;
       sex = guestSex();
+      measuredAt = guestBody.measuredAt || null;
     }
 
     if (!Money.canUse()) { Money.showPaywall(() => render()); return; }
@@ -1804,12 +1865,19 @@
     const easeBias = (typeof FitFeedback !== 'undefined')
       ? FitFeedback.calibration(wiz.garmentType) : 0;
 
+    // How old the numbers underneath this verdict are. Confidence should
+    // reflect the age of the evidence, not just how much of it there is.
+    const stale = Staleness.check(measuredAt);
+
     // sex picks the size chart — women's and men's are cut to different bodies
-    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex, { easeBias });
+    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex,
+                                     { easeBias, confidencePenalty: stale.penalty });
     if (!result) { toast('Could not analyze this garment.', 'err'); return; }
     if (typeof FitFeedback !== 'undefined') {
       result.calibrationNote = FitFeedback.explain(wiz.garmentType);
     }
+    result.staleNotice = stale.notice;
+    result.staleBand = stale.band;
 
     /* The headline sentence is derived by running the wearer against
        both the standard and the brand chart, so it can never contradict
@@ -2042,7 +2110,7 @@
             ) : ''}
             <div class="small muted" style="margin-top:10px">Confidence${r.brandConfidence ? '' : ' — based on how many measurements you\'ve provided'}</div>
             <div class="conf-track"><div class="conf-fill" style="width:${r.confidence}%"></div></div>
-            <div class="small muted" style="margin-top:4px">${r.confidence}%${r.brandConfidence ? ' · ' + esc(r.brandConfidence.label) : (r.confidence < 80 ? ' · add more measurements to raise this' : '')}</div>
+            <div class="small muted" style="margin-top:4px">${r.confidence}%${confidenceWhy(r)}</div>
           </div>
         </div>
 
@@ -2058,6 +2126,11 @@
 
         ${sizeLabelsHTML(r.bestLabels)}
         ${r.calibrationNote ? `<p class="small muted" style="margin-top:10px">⚖ ${esc(r.calibrationNote)}</p>` : ''}
+        ${r.staleNotice ? `
+          <div class="stale-note tone-${esc(r.staleBand === 'stale' ? 'bad' : 'warn')}">
+            <span>${esc(r.staleNotice)}</span>
+            <a class="btn btn-secondary btn-sm" href="#/${Auth.user() ? 'profiles' : 'analyze'}">Re-measure</a>
+          </div>` : ''}
       </div>
 
       ${r.returnRisk ? `
@@ -2712,6 +2785,22 @@
         </table>
         <p class="muted small mt-8">Flat measurements are doubled to get the garment all the way round. If a number looks wrong, the seller's tape is the likeliest culprit — ask them to re-measure.</p>
       </div>`;
+  }
+
+  /* Why the confidence is what it is. Two separate causes — not enough
+     measurements, and measurements too old — and telling someone to "add
+     more measurements" when they have given every one and the score is
+     down purely on age is advice they cannot act on. So the gap test runs
+     against the score BEFORE the age penalty. */
+  function confidenceWhy(r) {
+    const parts = [];
+    if (r.brandConfidence) {
+      parts.push(esc(r.brandConfidence.label));
+    } else if ((r.confidence + (r.stalePenalty || 0)) < 80) {
+      parts.push('add more measurements to raise this');
+    }
+    if (r.stalePenalty) parts.push(`${r.stalePenalty} off for the age of your measurements`);
+    return parts.length ? ' · ' + parts.join(' · ') : '';
   }
 
   // Plural, for the ledger's per-brand rows — distinct from the singular
@@ -4754,6 +4843,7 @@
 
   Auth.restore();
   render();
+  syncMeasureReminder();
 
   // Pull measurements + favourites from the account so they're present on
   // whatever device this is. Re-renders if anything changed.

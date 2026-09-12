@@ -551,6 +551,14 @@ const FitEngine = (() => {
     let confidence = Math.round(10 + 90 * measuredRatio);
     if (!customChart) confidence = Math.min(confidence, 90);
 
+    /* Age of the evidence. Knowing every zone is worth less when the
+       numbers were taken two years ago, and reporting the same
+       confidence either way is a claim about the input we cannot
+       support. Supplied by the caller (see Staleness) because the engine
+       has no idea when a measurement was written down. */
+    const stalePenalty = Math.max(0, Math.min(40, Number(opts && opts.confidencePenalty) || 0));
+    if (stalePenalty) confidence = Math.max(5, confidence - stalePenalty);
+
     // Headline verdict for the evaluated size — in the house tailor's voice.
     const problems = Object.entries(evaluated.zones)
       .filter(([, z]) => z.status !== 'good' && z.status !== 'info')
@@ -615,7 +623,8 @@ const FitEngine = (() => {
       // What to actually look for on the tag.
       labels: sizeLabels(garmentType, evaluated.size, sex, body),
       bestLabels: sizeLabels(garmentType, best.size, sex, body),
-      easeBias: easeBias || 0
+      easeBias: easeBias || 0,
+      stalePenalty: stalePenalty
     };
   }
 
