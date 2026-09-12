@@ -1,9 +1,16 @@
 'use strict';
 /* ============================================================
-   Auth — register / login / logout / session.
-   Passwords are hashed with SHA-256 + per-user salt before
-   storage (via Web Crypto, with a fallback for non-secure
-   contexts). Data never leaves this device.
+   Auth — the LOCAL, per-device account.
+
+   Passwords are hashed with SHA-256 + a per-user salt (Web Crypto,
+   with a fallback for non-secure contexts) and everything this module
+   writes stays in localStorage on this device.
+
+   That is true of THIS module only, and it is not the whole story for
+   the app: linking a cloud account (js/cloud.js) sends the email,
+   password and wardrobe to the server, and reading a size chart from
+   a photo sends that image to Google. See the privacy table in
+   README.md for what actually leaves the device and when.
    ============================================================ */
 
 const Auth = (() => {

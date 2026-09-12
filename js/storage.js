@@ -1,9 +1,11 @@
 'use strict';
 /* ============================================================
    Store — localStorage persistence layer.
-   All account data lives on this device, keyed by email:
-   accounts, body profiles (measurements + photos),
-   analysis history and preferences.
+   Local account data, keyed by email: accounts, body profiles
+   (measurements + photos), analysis history and preferences.
+
+   This layer is device-local. A linked cloud account (js/cloud.js)
+   mirrors some of it to the server — see README.md for the split.
    ============================================================ */
 
 const Store = (() => {

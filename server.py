@@ -20,10 +20,12 @@ normalises everything to centimetres and returns JSON:
 
 import functools
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
+import socket
 import ssl
 import sys
 import threading
@@ -43,24 +45,117 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 # ---------------------------------------------------------------
 # fetching
+#
+# Every URL here comes from a user ("paste your size-guide link"), so
+# the fetcher is an attacker-controlled HTTP client running inside our
+# network. Unguarded, that hands anyone the cloud metadata endpoint
+# (169.254.169.254), localhost admin panels, and any private-range
+# service the host can see. Guard: resolve the host and refuse
+# anything that is not a public IP, on every redirect hop as well.
+#
+# Residual risk: a host that resolves to a public IP at check time and
+# a private one microseconds later (DNS rebinding). Closing that fully
+# means connecting to the validated IP and carrying the Host header,
+# which urllib cannot do cleanly. Every realistic path — a literal
+# private address, a hostname pointing at one, a redirect chain into
+# one — is blocked here.
 # ---------------------------------------------------------------
+
+class UnsafeURLError(ValueError):
+    """A URL that resolves somewhere we refuse to send a request."""
+
+
+ALLOWED_SCHEMES = ("http", "https")
+# Fetching is for public web pages on their normal ports. Anything else is
+# someone probing internal services that happen to speak HTTP.
+ALLOWED_PORTS = (80, 443, 8080, 8443)
+
+
+def _ip_is_public(ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return not (
+        addr.is_private or addr.is_loopback or addr.is_link_local
+        or addr.is_multicast or addr.is_reserved or addr.is_unspecified
+    )
+
+
+def assert_safe_url(url):
+    """Raise UnsafeURLError unless every address `url` resolves to is public."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise UnsafeURLError("Malformed URL.")
+
+    if parts.scheme not in ALLOWED_SCHEMES:
+        raise UnsafeURLError("Only http:// and https:// links can be read.")
+
+    host = parts.hostname
+    if not host:
+        raise UnsafeURLError("That link has no hostname.")
+
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        raise UnsafeURLError("That link has an invalid port.")
+    if port not in ALLOWED_PORTS:
+        raise UnsafeURLError("That link uses a port we do not fetch.")
+
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        raise UnsafeURLError("Could not resolve that address.")
+
+    addrs = {info[4][0] for info in infos}
+    if not addrs:
+        raise UnsafeURLError("Could not resolve that address.")
+    # Reject if ANY resolved address is non-public: a host that answers with
+    # both a public and a private address must not be reachable through us.
+    for ip in addrs:
+        if not _ip_is_public(ip):
+            raise UnsafeURLError("That address is not publicly routable.")
+    return url
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-run the safety check on every hop — an allowed page is free to
+    redirect us at 169.254.169.254 otherwise."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        assert_safe_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+@functools.lru_cache(maxsize=1)
+def _opener():
+    # No unverified-TLS fallback. A certificate that fails to verify is a
+    # broken or intercepted connection, and silently continuing turned every
+    # cert error into an undetectable man-in-the-middle.
+    ctx = ssl.create_default_context()
+    return urllib.request.build_opener(
+        _SafeRedirectHandler(),
+        urllib.request.HTTPSHandler(context=ctx),
+    )
+
+
+def _open(url, accept):
+    assert_safe_url(url)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": UA,
+        "Accept": accept,
+        "Accept-Language": "en-US,en;q=0.8",
+    })
+    return _opener().open(req, timeout=TIMEOUT)
+
 
 def fetch_html(url):
     """Return (html_text, final_url). Raises on network errors."""
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.8",
-    })
-    try:
-        ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            return _read(r)
-    except ssl.SSLError:
-        # some Python installs ship without usable CA certs — degrade
-        ctx = ssl._create_unverified_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            return _read(r)
+    with _open(url, "text/html,application/xhtml+xml,*/*;q=0.8") as r:
+        return _read(r)
 
 
 def _read(resp):
@@ -327,6 +422,8 @@ def get_size_chart(url):
         return {"ok": False, "error": "Please paste a full link starting with http:// or https://"}
     try:
         html, final_url = fetch_html(url)
+    except UnsafeURLError as e:
+        return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": "Could not open that page (%s)." % e.__class__.__name__}
 
@@ -556,14 +653,9 @@ def gtx_translate(text, to):
            "?client=gtx&sl=en&tl=%s&dt=t&q=%s"
            % (urllib.parse.quote(to), urllib.parse.quote(text)))
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            raw = r.read().decode("utf-8", "replace")
-    except ssl.SSLError:
-        ctx = ssl._create_unverified_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            raw = r.read().decode("utf-8", "replace")
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
+        raw = r.read().decode("utf-8", "replace")
     data = json.loads(raw)
     out = "".join(seg[0] for seg in data[0] if seg and seg[0])
     with _TR_LOCK:
@@ -603,6 +695,12 @@ _OUTFITS_LOCK = threading.Lock()
 _BATTLES_LOCK = threading.Lock()
 MAX_IMAGE_CHARS = 2_000_000   # ~1.5MB image as data URL
 MAX_PENDING = 100
+
+
+def admin_key_ok(supplied):
+    """Constant-time moderation-key check. A plain `==` leaks the key one
+    character at a time to anyone who can measure response latency."""
+    return secrets.compare_digest(str(supplied or ""), admin_key())
 
 
 def admin_key():
@@ -690,7 +788,7 @@ def outfits_vote(body):
 
 
 def outfits_pending(key):
-    if key != admin_key():
+    if not admin_key_ok(key):
         return {"ok": False, "error": "Wrong moderation key."}
     # Show posts awaiting review AND already-live posts that were reported —
     # reported ones float to the top so the moderator sees them first.
@@ -743,7 +841,7 @@ def outfits_submit(body):
 
 
 def outfits_moderate(body):
-    if body.get("key") != admin_key():
+    if not admin_key_ok(body.get("key")):
         return {"ok": False, "error": "Wrong moderation key."}
     pid = body.get("id")
     action = body.get("action")
@@ -812,17 +910,8 @@ def _thumb_host_ok(url):
 
 
 def fetch_image_bytes(url):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": UA, "Accept": "image/*,*/*;q=0.8",
-    })
-    try:
-        ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            return r.read(MAX_BYTES), (r.headers.get("Content-Type") or "image/jpeg")
-    except ssl.SSLError:
-        ctx = ssl._create_unverified_context()
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            return r.read(MAX_BYTES), (r.headers.get("Content-Type") or "image/jpeg")
+    with _open(url, "image/*,*/*;q=0.8") as r:
+        return r.read(MAX_BYTES), (r.headers.get("Content-Type") or "image/jpeg")
 
 
 def get_thumb(url):
@@ -985,7 +1074,7 @@ def battle_vote(body):
 
 def battle_pending(key):
     """Admin view: every entry (pending first) + the current battle's score."""
-    if key != admin_key():
+    if not admin_key_ok(key):
         return {"ok": False, "error": "Wrong moderation key."}
     d = _load_battles()
     subs = sorted(d["submissions"], key=lambda s: (s.get("status") != "pending", -(s.get("ts") or 0)))
@@ -1000,7 +1089,7 @@ def battle_pending(key):
 
 
 def battle_moderate(body):
-    if body.get("key") != admin_key():
+    if not admin_key_ok(body.get("key")):
         return {"ok": False, "error": "Wrong moderation key."}
     sid = body.get("id")
     action = body.get("action")
@@ -1021,7 +1110,7 @@ def battle_moderate(body):
 
 def battle_create(body):
     """Admin picks two approved entries → they become today's battle (votes reset)."""
-    if body.get("key") != admin_key():
+    if not admin_key_ok(body.get("key")):
         return {"ok": False, "error": "Wrong moderation key."}
     a_id, b_id = body.get("aId"), body.get("bId")
     if not a_id or not b_id or a_id == b_id:
@@ -1045,7 +1134,7 @@ def battle_create(body):
 
 
 def battle_close(body):
-    if body.get("key") != admin_key():
+    if not admin_key_ok(body.get("key")):
         return {"ok": False, "error": "Wrong moderation key."}
     with _BATTLES_LOCK:
         d = _load_battles()
@@ -1104,8 +1193,49 @@ def _norm_email(e):
     return str(e or "").strip().lower()
 
 
-def _hash_pw(salt, password):
+# Password hashing.
+#
+# This was one round of SHA-256, which a commodity GPU walks through at
+# billions of guesses a second — a leaked accounts.json meant leaked
+# passwords. scrypt is memory-hard, in the standard library, and needs no
+# dependency, so it costs nothing to be correct here.
+#
+# Stored as "scrypt$<n>$<r>$<p>$<salt>$<hash>". Records written by the old
+# scheme have no "$" and are still verified as bare SHA-256, then rewritten
+# as scrypt the next time that user logs in successfully — nobody is locked
+# out by the upgrade and no password ever needs resetting.
+SCRYPT_N = 2 ** 14
+SCRYPT_R = 8
+SCRYPT_P = 1
+SCRYPT_MAXMEM = 64 * 1024 * 1024
+
+
+def _hash_pw_legacy(salt, password):
     return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+
+
+def _hash_pw(password, salt=None, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.scrypt(
+        password.encode("utf-8"), salt=salt.encode("utf-8"),
+        n=n, r=r, p=p, maxmem=SCRYPT_MAXMEM,
+    )
+    return "scrypt$%d$%d$%d$%s$%s" % (n, r, p, salt, digest.hex())
+
+
+def _verify_pw(acct, password):
+    """(matches, needs_rehash) for a password against a stored account."""
+    stored = acct.get("passHash") or ""
+    if stored.startswith("scrypt$"):
+        try:
+            _, n, r, p, salt, _ = stored.split("$", 5)
+            candidate = _hash_pw(password, salt, int(n), int(r), int(p))
+        except (ValueError, TypeError):
+            return False, False
+        return secrets.compare_digest(candidate, stored), False
+    # Legacy salted SHA-256 — verify, then signal it should be upgraded.
+    candidate = _hash_pw_legacy(acct.get("salt", ""), password)
+    return secrets.compare_digest(candidate, stored), True
 
 
 def _issue_token(acct):
@@ -1130,12 +1260,12 @@ def account_register(body):
         accts = _load_accounts()
         if email in accts:
             return {"ok": False, "error": "An account with this email already exists."}
-        salt = secrets.token_hex(8)
-        acct = {"salt": salt, "passHash": _hash_pw(salt, password),
+        acct = {"passHash": _hash_pw(password),
                 "name": name, "createdAt": int(time.time()), "tokens": {}}
         tok = _issue_token(acct)
         accts[email] = acct
         _save_accounts(accts)
+    _remember_token(tok, email, acct["tokens"][tok])
     return {"ok": True, "token": tok, "email": email, "name": name}
 
 
@@ -1145,10 +1275,20 @@ def account_login(body):
     with _ACCOUNTS_LOCK:
         accts = _load_accounts()
         acct = accts.get(email)
-        if not acct or acct.get("passHash") != _hash_pw(acct.get("salt", ""), password):
+        if not acct:
+            # Spend the same work as a real verification so a missing account
+            # cannot be told from a wrong password by timing alone.
+            _hash_pw(password)
             return {"ok": False, "error": "Wrong email or password."}
+        matches, needs_rehash = _verify_pw(acct, password)
+        if not matches:
+            return {"ok": False, "error": "Wrong email or password."}
+        if needs_rehash:
+            acct["passHash"] = _hash_pw(password)
+            acct.pop("salt", None)
         tok = _issue_token(acct)
         _save_accounts(accts)
+    _remember_token(tok, email, acct["tokens"][tok])
     return {"ok": True, "token": tok, "email": email, "name": acct.get("name", "")}
 
 
@@ -1161,6 +1301,7 @@ def account_logout(body):
                 del acct["tokens"][tok]
                 _save_accounts(accts)
                 break
+    _forget_token(tok)
     return {"ok": True}
 
 
@@ -1184,21 +1325,63 @@ def account_delete(body):
             pass
         except Exception:
             pass
+    _forget_account_tokens(email)
     return {"ok": True}
+
+
+# Token lookup used to re-read and linearly scan every account on every
+# authenticated request — O(all users), plus a full JSON parse, per call.
+# The index is built once from disk and maintained in memory thereafter.
+_TOKEN_INDEX = {}            # token -> (email, expiry)
+_TOKEN_INDEX_READY = False
+_TOKEN_LOCK = threading.Lock()
+
+
+def _build_token_index(accts):
+    now = int(time.time())
+    return {
+        tok: (email, exp)
+        for email, acct in accts.items()
+        for tok, exp in (acct.get("tokens") or {}).items()
+        if exp > now
+    }
+
+
+def _remember_token(tok, email, exp):
+    with _TOKEN_LOCK:
+        if _TOKEN_INDEX_READY:
+            _TOKEN_INDEX[tok] = (email, exp)
+
+
+def _forget_token(tok):
+    with _TOKEN_LOCK:
+        _TOKEN_INDEX.pop(tok, None)
+
+
+def _forget_account_tokens(email):
+    with _TOKEN_LOCK:
+        for tok in [t for t, (e, _) in _TOKEN_INDEX.items() if e == email]:
+            del _TOKEN_INDEX[tok]
 
 
 def _resolve_token(tok):
     """Return the email a live token belongs to, or None."""
+    global _TOKEN_INDEX, _TOKEN_INDEX_READY
     tok = str(tok or "")
     if not tok:
         return None
-    now = int(time.time())
-    accts = _load_accounts()
-    for email, acct in accts.items():
-        exp = (acct.get("tokens") or {}).get(tok)
-        if exp and exp > now:
-            return email
-    return None
+    with _TOKEN_LOCK:
+        if not _TOKEN_INDEX_READY:
+            _TOKEN_INDEX = _build_token_index(_load_accounts())
+            _TOKEN_INDEX_READY = True
+        entry = _TOKEN_INDEX.get(tok)
+        if not entry:
+            return None
+        email, exp = entry
+        if exp <= int(time.time()):
+            del _TOKEN_INDEX[tok]
+            return None
+        return email
 
 
 def _wardrobe_path(email):
@@ -1414,12 +1597,215 @@ def favourites_put(body):
 
 
 # ---------------------------------------------------------------
+# Anonymous fit reports
+#
+# "Does this brand run small?" is the most useful thing anyone can know
+# before buying, and it only exists in aggregate. Stored as counters
+# keyed by brand + garment + size — no account, no token, no
+# measurements, nothing that identifies a person. The client posts a
+# single outcome; there is deliberately nothing here to join on.
+# ---------------------------------------------------------------
+
+FEEDBACK_FILE = os.path.join(DATA_DIR, "fit_feedback.json")
+_FEEDBACK_LOCK = threading.Lock()
+FEEDBACK_OUTCOMES = ("too-tight", "good", "too-loose")
+MAX_FEEDBACK_KEYS = 20000
+
+
+def _load_feedback():
+    try:
+        with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_feedback(d):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = FEEDBACK_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, FEEDBACK_FILE)
+
+
+def _feedback_key(brand, garment, size):
+    return "|".join([
+        str(brand or "")[:60].strip().lower(),
+        str(garment or "")[:30].strip().lower(),
+        str(size or "")[:12].strip().upper(),
+    ])
+
+
+def fit_feedback_submit(body):
+    brand = str(body.get("brand") or "").strip()[:60]
+    garment = str(body.get("garmentType") or "").strip()[:30]
+    size = str(body.get("size") or "").strip()[:12]
+    outcome = str(body.get("outcome") or "").strip()
+    if not brand or outcome not in FEEDBACK_OUTCOMES:
+        return {"ok": False, "error": "Bad report."}
+
+    key = _feedback_key(brand, garment, size)
+    with _FEEDBACK_LOCK:
+        data = _load_feedback()
+        if key not in data and len(data) >= MAX_FEEDBACK_KEYS:
+            return {"ok": True}  # table full; drop silently rather than grow
+        row = data.setdefault(key, {"brand": brand, "garment": garment, "size": size})
+        row[outcome] = int(row.get(outcome, 0)) + 1
+        _save_feedback(data)
+    return {"ok": True}
+
+
+def fit_feedback_query(brand, garment):
+    """Aggregate verdict for a brand (optionally one garment type)."""
+    brand_n = str(brand or "").strip().lower()
+    garment_n = str(garment or "").strip().lower()
+    if not brand_n:
+        return {"ok": False, "error": "No brand."}
+
+    tally = {o: 0 for o in FEEDBACK_OUTCOMES}
+    data = _load_feedback()
+    for key, row in data.items():
+        if str(row.get("brand", "")).strip().lower() != brand_n:
+            continue
+        if garment_n and str(row.get("garment", "")).strip().lower() != garment_n:
+            continue
+        for o in FEEDBACK_OUTCOMES:
+            tally[o] += int(row.get(o, 0) or 0)
+
+    total = sum(tally.values())
+    if not total:
+        return {"ok": True, "total": 0}
+
+    tight = round(100 * tally["too-tight"] / total)
+    loose = round(100 * tally["too-loose"] / total)
+    if tight >= 50:
+        verdict = "Runs small — most people needed a size up."
+    elif loose >= 50:
+        verdict = "Runs large — most people needed a size down."
+    elif tally["good"] >= total / 2:
+        verdict = "True to size for most people."
+    else:
+        verdict = "Mixed reports — sizing is inconsistent here."
+
+    return {"ok": True, "total": total, "brand": brand,
+            "tooTightPct": tight, "tooLoosePct": loose,
+            "goodPct": round(100 * tally["good"] / total), "verdict": verdict}
+
+
+# ---------------------------------------------------------------
+# Rate limiting
+#
+# Without this, /api/account/login is an open door for credential
+# stuffing and /api/size-chart is a free bandwidth proxy that will fetch
+# any page on the internet on request. Fixed windows per client IP, in
+# memory: no dependency, and a single process is all this server is.
+#
+# Behind a proxy (Render, Railway, Fly) the peer address is the proxy,
+# so the left-most X-Forwarded-For entry is used when TRUST_PROXY is on.
+# It defaults ON because that is how this app is actually deployed; set
+# FITCHECK_TRUST_PROXY=0 when running exposed directly, where the header
+# is client-controlled and would let anyone forge a fresh identity.
+# ---------------------------------------------------------------
+
+TRUST_PROXY = (os.environ.get("FITCHECK_TRUST_PROXY", "1").strip().lower()
+               not in ("0", "false", "no"))
+
+# route prefix -> (max requests, window seconds)
+RATE_LIMITS = {
+    "/api/account/login":    (10, 300),
+    "/api/account/register": (5, 3600),
+    "/api/account/delete":   (5, 3600),
+    "/api/size-chart":       (30, 300),
+    "/api/translate":        (60, 300),
+    "/api/outfits":          (20, 300),
+    "/api/battle":           (20, 300),
+    "/api/fit-feedback":     (60, 300),
+}
+RATE_DEFAULT = (120, 300)
+_RATE_HITS = {}
+_RATE_LOCK = threading.Lock()
+_RATE_SWEEP = [0.0]
+
+
+class RateLimited(Exception):
+    def __init__(self, retry_after):
+        super().__init__("rate limited")
+        self.retry_after = retry_after
+
+
+def _rate_rule(path):
+    for prefix, rule in RATE_LIMITS.items():
+        if path == prefix or path.startswith(prefix + "/"):
+            return rule
+    return RATE_DEFAULT
+
+
+def rate_check(client, path):
+    """Raise RateLimited if this client has spent its budget for this route."""
+    limit, window = _rate_rule(path)
+    now = time.time()
+    key = (client, path)
+    with _RATE_LOCK:
+        # Sweep expired buckets occasionally so the table cannot grow without
+        # bound under a spray of one-request-per-IP traffic.
+        if now - _RATE_SWEEP[0] > 600:
+            _RATE_SWEEP[0] = now
+            for k in [k for k, v in _RATE_HITS.items() if v[1] <= now]:
+                del _RATE_HITS[k]
+        count, resets = _RATE_HITS.get(key, (0, 0.0))
+        if resets <= now:
+            _RATE_HITS[key] = (1, now + window)
+            return
+        if count >= limit:
+            raise RateLimited(max(1, int(resets - now)))
+        _RATE_HITS[key] = (count + 1, resets)
+
+
+# ---------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------
 
 class Handler(SimpleHTTPRequestHandler):
+    def _client(self):
+        if TRUST_PROXY:
+            fwd = self.headers.get("X-Forwarded-For", "")
+            if fwd:
+                return fwd.split(",")[0].strip()
+        return self.client_address[0] if self.client_address else "?"
+
+    def _allowed(self, path):
+        """False (and a 429 already sent) when this client is over budget."""
+        if not path.startswith("/api/"):
+            return True
+        try:
+            rate_check(self._client(), path)
+            return True
+        except RateLimited as e:
+            body = json.dumps({
+                "ok": False,
+                "error": "Too many requests — try again in %d seconds." % e.retry_after,
+            }).encode("utf-8")
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Retry-After", str(e.retry_after))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return False
+
+    def end_headers(self):
+        # Defence-in-depth headers on every response, static files included.
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        super().end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        if not self._allowed(parsed.path):
+            return
         if parsed.path == "/api/size-chart":
             qs = urllib.parse.parse_qs(parsed.query)
             url = (qs.get("url") or [""])[0].strip()
@@ -1475,6 +1861,11 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/account/data":
             self._json(account_data_get(self._bearer()))
             return
+        if parsed.path == "/api/fit-feedback":
+            qs = urllib.parse.parse_qs(parsed.query)
+            self._json(fit_feedback_query((qs.get("brand") or [""])[0],
+                                          (qs.get("garment") or [""])[0]))
+            return
         super().do_GET()
 
     def _bearer(self):
@@ -1496,6 +1887,17 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if not self._allowed(parsed.path):
+            return
+        if parsed.path == "/api/fit-feedback":
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                body = json.loads((self.rfile.read(min(length, 4096)) or b"{}").decode("utf-8", "replace"))
+                result = fit_feedback_submit(body)
+            except Exception as e:
+                result = {"ok": False, "error": e.__class__.__name__}
+            self._json(result)
+            return
         if parsed.path == "/api/translate":
             try:
                 length = int(self.headers.get("Content-Length", 0) or 0)

@@ -1796,9 +1796,18 @@
       : null;
     const chart = wiz.customChart || brandChart;
 
+    /* Correction learned from what this wearer reported about garments
+       they actually wore, so repeated "too tight" stops being a mistake
+       we make forever. */
+    const easeBias = (typeof FitFeedback !== 'undefined')
+      ? FitFeedback.calibration(wiz.garmentType) : 0;
+
     // sex picks the size chart — women's and men's are cut to different bodies
-    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex);
+    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex, { easeBias });
     if (!result) { toast('Could not analyze this garment.', 'err'); return; }
+    if (typeof FitFeedback !== 'undefined') {
+      result.calibrationNote = FitFeedback.explain(wiz.garmentType);
+    }
 
     /* The headline sentence is derived by running the wearer against
        both the standard and the brand chart, so it can never contradict
@@ -1917,6 +1926,73 @@
     short: 'var(--info)', long: 'var(--info)', info: 'var(--text-3)'
   };
 
+  /* The size as it is actually printed on the tag. "L" is not what the
+     label says in a Zara or on a pair of jeans, and the conversion is
+     exactly where people buy the wrong thing. */
+  function sizeLabelsHTML(labels) {
+    if (!labels) return '';
+    const chips = (labels.systems || []).map(s =>
+      `<span class="size-chip"><span class="size-chip-k">${esc(s.name)}</span>${esc(String(s.value))}</span>`).join('');
+    const denim = labels.denim
+      ? `<span class="size-chip size-chip-lead"><span class="size-chip-k">Tag</span>${esc(labels.denim.label)}</span>`
+      : '';
+    if (!chips && !denim) return '';
+    return `
+      <div class="size-systems">
+        <div class="section-label" style="margin:14px 0 6px">Look for</div>
+        <div class="size-chips">${denim}${chips}</div>
+        ${labels.denim && labels.denim.estimatedInseam
+          ? '<p class="small muted" style="margin-top:6px">Leg length estimated from your height — add an inseam measurement to pin it down.</p>' : ''}
+      </div>`;
+  }
+
+  /* The question nobody was asking: did it actually fit? Without it the
+     engine never finds out it was wrong, and neither does the wearer. */
+  function fitFeedbackHTML(a) {
+    if (typeof FitFeedback === 'undefined') return '';
+    if (a.feedback) {
+      const o = FitFeedback.OUTCOMES[a.feedback];
+      return `
+        <div class="card">
+          <div class="card-title">Your report</div>
+          <p class="mb-8">You said this one <strong>${esc(o ? o.label.toLowerCase() : a.feedback)}</strong>. Thanks — it tunes your next check.</p>
+          <button class="btn btn-ghost btn-sm" data-fb-undo="${esc(a.id)}">Change my answer</button>
+        </div>`;
+    }
+    return `
+      <div class="card">
+        <div class="card-title">Did it actually fit?</div>
+        <p class="muted small mb-16">Tell us once you've worn it. Every answer sharpens the next recommendation for your body.</p>
+        <div class="fb-row">
+          ${Object.keys(FitFeedback.OUTCOMES).map(k =>
+            `<button class="btn btn-ghost fb-btn" data-fb="${esc(k)}">${esc(FitFeedback.OUTCOMES[k].label)}</button>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  function wireFitFeedback(a, isGuest, id) {
+    if (typeof FitFeedback === 'undefined') return;
+
+    const persist = () => {
+      // Guest results live in memory only; an account's history is saved.
+      if (!isGuest) saveOrWarn();
+      renderResultPage(id);
+    };
+
+    view.querySelectorAll('[data-fb]').forEach(btn => {
+      btn.onclick = () => {
+        const outcome = btn.getAttribute('data-fb');
+        FitFeedback.record(a.result, outcome, { brand: a.result.brand || a.result.brandId });
+        a.feedback = outcome;
+        toast('Logged — your next check is tuned to this.', 'ok');
+        persist();
+      };
+    });
+
+    const undo = view.querySelector('[data-fb-undo]');
+    if (undo) undo.onclick = () => { delete a.feedback; persist(); };
+  }
+
   function renderResultPage(id) {
     const u = Auth.user();
     const isGuest = id === 'guest';
@@ -1977,6 +2053,9 @@
             ? `✓ <strong>Size ${esc(r.bestSize)}</strong> is your best size for this garment — go with it.`
             : `→ Recommended size: <strong>${esc(r.bestSize)}</strong> (fit score ${r.bestScore})${r.pickedSize ? ` — better than ${esc(r.pickedSize)} for your measurements.` : '.'}`}
         </div>
+
+        ${sizeLabelsHTML(r.bestLabels)}
+        ${r.calibrationNote ? `<p class="small muted" style="margin-top:10px">⚖ ${esc(r.calibrationNote)}</p>` : ''}
       </div>
 
       ${r.returnRisk ? `
@@ -2114,6 +2193,8 @@
         </table>
       </div>
 
+      ${fitFeedbackHTML(a)}
+
       <div class="btn-row mb-16">
         <button class="btn btn-primary btn-lg" id="res-again">Check another garment</button>
         ${isGuest ? '' : '<button class="btn btn-secondary" id="res-history">View history</button>'}
@@ -2124,6 +2205,7 @@
 
     wirePromo();
     Money.wireAds(view);
+    wireFitFeedback(a, isGuest, id);
 
     // animate ring + count the number up
     requestAnimationFrame(() => {

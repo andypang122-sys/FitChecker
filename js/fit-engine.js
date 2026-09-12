@@ -198,6 +198,105 @@ const FitEngine = (() => {
 
   const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
+  /* ----------------------------------------------------------
+     Real-world size labels.
+
+     Almost nothing is actually sold as "L". Womenswear is US 8 /
+     UK 12 / EU 40, men's shirts go by collar and chest inches, and
+     jeans are W32 L34 — so a verdict that only ever says "L" leaves
+     the wearer to do the conversion at the checkout, which is the
+     exact moment they get it wrong.
+
+     The letter ladders below follow the standard published mappings.
+     Jeans are not converted but DERIVED, because W/L is just the body
+     in inches and we already hold the body: that is strictly better
+     than a lookup table, and it is the one category where the label
+     on the tag is a measurement rather than a guess.
+     ---------------------------------------------------------- */
+
+  const SIZE_SYSTEMS = {
+    female: {
+      XS:  { US: '0–2',   UK: '4–6',   EU: '32–34' },
+      S:   { US: '4–6',   UK: '8–10',  EU: '36–38' },
+      M:   { US: '8–10',  UK: '12–14', EU: '40–42' },
+      L:   { US: '12–14', UK: '16–18', EU: '44–46' },
+      XL:  { US: '16–18', UK: '20–22', EU: '48–50' },
+      XXL: { US: '20–22', UK: '24–26', EU: '52–54' }
+    },
+    male: {
+      XS:  { Chest: '33"', EU: '42' },
+      S:   { Chest: '35"', EU: '46' },
+      M:   { Chest: '38"', EU: '48' },
+      L:   { Chest: '41"', EU: '52' },
+      XL:  { Chest: '44"', EU: '56' },
+      XXL: { Chest: '47"', EU: '60' }
+    }
+  };
+
+  // Collar sizes for shirts, which are sold by neck rather than chest.
+  // Derived from the chart's chest, the usual drafting relationship.
+  const COLLAR_FROM_CHEST = { XS: 14, S: 14.5, M: 15.5, L: 16.5, XL: 17.5, XXL: 18.5 };
+
+  function inches(cm) { return cm / 2.54; }
+
+  /* Jeans and shorts: the tag is W (waist, inches) x L (inseam, inches).
+     Rounded to the even waist sizes denim is actually cut in, and to the
+     standard 30/32/34/36 leg lengths. */
+  function denimSize(body, chartSize) {
+    const waistCm = Number(body && body.waist);
+    if (!isFinite(waistCm) || waistCm <= 0) return null;
+
+    // Denim is labelled at the waistband, which sits below the natural
+    // waist on most cuts; brands then label a touch small on top of that.
+    const w = Math.round(inches(waistCm) / 2) * 2;
+
+    const inseamCm = Number(body && body.inseam);
+    const heightCm = Number(body && body.height);
+    let l = null;
+    if (isFinite(inseamCm) && inseamCm > 0) {
+      l = Math.round(inches(inseamCm) / 2) * 2;
+    } else if (isFinite(heightCm) && heightCm > 0) {
+      l = Math.round(inches(heightCm * LENGTH_RATIO.inseam.jeans) / 2) * 2;
+    }
+    if (l != null) l = Math.max(28, Math.min(36, l));
+
+    return {
+      waist: w,
+      inseam: l,
+      label: l != null ? `W${w} L${l}` : `W${w}`,
+      estimatedInseam: !(isFinite(inseamCm) && inseamCm > 0),
+      chartSize: chartSize
+    };
+  }
+
+  const LEGWEAR = ['jeans', 'shorts'];
+
+  /* What this size is called everywhere else. Returns
+     { label, systems: [{name, value}], denim } — denim only for legwear.
+
+     The men's ladder is expressed in chest and jacket sizes, which mean
+     nothing on a pair of trousers, so legwear drops it and leans on the
+     W x L tag instead. Women's numeric sizing is a single ladder that
+     does cover bottoms, so it stays. */
+  function sizeLabels(garmentType, size, sex, body) {
+    const key = sex === 'female' ? 'female' : 'male';
+    const isLegwear = LEGWEAR.indexOf(garmentType) !== -1;
+
+    let systems = [];
+    if (!(isLegwear && key === 'male')) {
+      const row = (SIZE_SYSTEMS[key] || {})[size] || {};
+      systems = Object.keys(row).map(name => ({ name, value: row[name] }));
+    }
+
+    if (garmentType === 'shirt' && key === 'male' && COLLAR_FROM_CHEST[size]) {
+      systems.unshift({ name: 'Collar', value: COLLAR_FROM_CHEST[size] + '"' });
+    }
+
+    const denim = isLegwear ? denimSize(body, size) : null;
+
+    return { label: size, systems, denim };
+  }
+
   /* The one way to get a usable chart: resolves the right ladder for this
      wearer and flattens it to { label, zones, sizes }.
 
@@ -316,7 +415,7 @@ const FitEngine = (() => {
   // then only nudges the target slightly.
   const BODY_CHART_EASE = { slim: -2, regular: 0, relaxed: 4 };
 
-  function evalZone(zoneKey, chart, garmentType, size, body, fitPref) {
+  function evalZone(zoneKey, chart, garmentType, size, body, fitPref, easeBias) {
     const zone = ZONES[zoneKey];
     const garmentVal = chart.sizes[size][zoneKey];
     if (garmentVal == null) return null;
@@ -332,14 +431,18 @@ const FitEngine = (() => {
       const layerNote = layer && LAYER_UNDER[garmentType]
         ? ` Includes room for ${LAYER_UNDER[garmentType]} underneath.` : '';
 
-      const idealEase = chart.bodyChart
+      const baseEase = chart.bodyChart
         ? BODY_CHART_EASE[fitPref] != null ? BODY_CHART_EASE[fitPref] : 0
         : zone.ease[fitPref] != null ? zone.ease[fitPref] : zone.ease.regular;
+      /* Learned correction from what this wearer reported about clothes
+         they actually bought (see FitFeedback). Girth only — nobody's
+         feedback tells us their arms got longer. */
+      const idealEase = baseEase + (easeBias || 0);
       const actualEase = garmentVal - bodyVal;      // room the garment gives you
       const delta = actualEase - idealEase;         // + = roomier than ideal, − = tighter
       const t = zone.tol;
 
-      if (delta < -t * 1.75) return { status: 'tight', delta, score: clampScore(38 + delta), message: `Too tight — about ${fmt(-actualEase > 0 ? -delta : -delta)} cm less room than ideal at the ${zone.label.toLowerCase()}. ${actualEase < 0 ? 'It is smaller than your body here and will pull or pinch.' : 'Expect it to feel restrictive.'}` };
+      if (delta < -t * 1.75) return { status: 'tight', delta, score: clampScore(38 + delta), message: `Too tight — about ${fmt(delta)} cm less room than ideal at the ${zone.label.toLowerCase()}. ${actualEase < 0 ? 'It is smaller than your body here and will pull or pinch.' : 'Expect it to feel restrictive.'}` };
       if (delta < -t)        return { status: 'tight', delta, score: clampScore(68 + delta * 2), message: `Slightly tight at the ${zone.label.toLowerCase()} — wearable, but snugger than a ${fitPref} fit should be.` };
       if (delta > t * 1.75)  return { status: 'loose', delta, score: clampScore(38 - delta), message: `Too loose — about ${fmt(delta)} cm more room than ideal at the ${zone.label.toLowerCase()}. Expect visible bagginess.` };
       if (delta > t)         return { status: 'loose', delta, score: clampScore(68 - delta * 2), message: `Slightly loose at the ${zone.label.toLowerCase()} — a bit roomier than a ${fitPref} fit.` };
@@ -369,6 +472,16 @@ const FitEngine = (() => {
     return Math.max(5, Math.min(100, Math.round(n)));
   }
 
+  // FNV-1a, reduced to a bucket. Stable across runs and platforms.
+  function hashIndex(str, buckets) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return buckets ? h % buckets : 0;
+  }
+
   function fmt(n) {
     return Math.abs(Math.round(n * 2) / 2);
   }
@@ -381,12 +494,12 @@ const FitEngine = (() => {
 
   const ZONE_WEIGHT = { chest: 3, waist: 3, hips: 3, shoulders: 2.5, thigh: 2, sleeveLength: 1.5, torsoLength: 1.5, inseam: 1.5 };
 
-  function evalSize(chart, garmentType, size, body, fitPref) {
+  function evalSize(chart, garmentType, size, body, fitPref, easeBias) {
     const zones = {};
     let weighted = 0, weightSum = 0, measuredZones = 0;
 
     for (const zk of chart.zones) {
-      const res = evalZone(zk, chart, garmentType, size, body, fitPref);
+      const res = evalZone(zk, chart, garmentType, size, body, fitPref, easeBias);
       if (!res) continue;
       zones[zk] = res;
       const w = ZONE_WEIGHT[zk] || 1;
@@ -408,14 +521,18 @@ const FitEngine = (() => {
      clothing are cut to different bodies, so this changes the answer.
      ---------------------------------------------------------- */
 
-  function analyze(garmentType, body, fitPref, pickedSize, customChart, sex) {
+  function analyze(garmentType, body, fitPref, pickedSize, customChart, sex, opts) {
     const baseChart = chartFor(garmentType, sex);
     const chart = customChart || baseChart;
     if (!chart) return null;
     fitPref = fitPref || 'regular';
 
+    // Clamped hard: a learned correction should nudge a borderline call,
+    // never march someone two sizes away from their own measurements.
+    const easeBias = Math.max(-4, Math.min(4, Number(opts && opts.easeBias) || 0));
+
     const order = chart.sizeOrder || SIZE_ORDER;
-    const allSizes = order.map(s => evalSize(chart, garmentType, s, body, fitPref));
+    const allSizes = order.map(s => evalSize(chart, garmentType, s, body, fitPref, easeBias));
     let best = allSizes[0];
     for (const s of allSizes) if (s.score > best.score) best = s;
 
@@ -423,9 +540,16 @@ const FitEngine = (() => {
       ? allSizes.find(s => s.size === pickedSize)
       : best;
 
-    // Confidence: how many zones we could actually measure.
+    /* Confidence: how much of this verdict rests on real measurements.
+       It used to start at 50% and only climb, so "we know nothing about
+       you" still read as a coin-flip's worth of certainty. It now spans
+       the honest range, and a generic ladder is capped below a brand's
+       own published chart, because it is a national-average guess about
+       a garment this brand may cut nothing like. */
     const totalZones = chart.zones.length;
-    const confidence = Math.round(50 + 50 * (evaluated.measuredZones / totalZones));
+    const measuredRatio = totalZones ? evaluated.measuredZones / totalZones : 0;
+    let confidence = Math.round(10 + 90 * measuredRatio);
+    if (!customChart) confidence = Math.min(confidence, 90);
 
     // Headline verdict for the evaluated size — in the house tailor's voice.
     const problems = Object.entries(evaluated.zones)
@@ -436,7 +560,11 @@ const FitEngine = (() => {
       : evaluated.score >= 82 ? VERDICT_LINES.good
       : evaluated.score >= 65 ? VERDICT_LINES.fair
       : VERDICT_LINES.poor;
-    let verdict = pool[Math.floor(Math.random() * pool.length)](evaluated.size);
+    /* Picked from a stable hash of the inputs, not at random. The same
+       body and the same garment must produce the same sentence every
+       time — a measurement tool that rewords its answer on re-run looks
+       like it is guessing. */
+    let verdict = pool[hashIndex([garmentType, evaluated.size, evaluated.score, fitPref].join('|'), pool.length)](evaluated.size);
 
     if (problems.length) {
       const worst = problems[0];
@@ -483,7 +611,11 @@ const FitEngine = (() => {
       tiebreaker,
       silhouette: silhouetteNotes(body),
       brand: customChart ? chart.brand || null : null,
-      source: customChart ? chart.source || null : null
+      source: customChart ? chart.source || null : null,
+      // What to actually look for on the tag.
+      labels: sizeLabels(garmentType, evaluated.size, sex, body),
+      bestLabels: sizeLabels(garmentType, best.size, sex, body),
+      easeBias: easeBias || 0
     };
   }
 
@@ -586,5 +718,9 @@ const FitEngine = (() => {
   function cmToIn(cm) { return Math.round((cm / 2.54) * 10) / 10; }
   function inToCm(inch) { return Math.round(inch * 2.54 * 10) / 10; }
 
-  return { SIZE_CHARTS, SIZE_ORDER, ZONES, BODY_FIELDS, analyze, chartFor, sizesFor, buildCustomChart, silhouetteNotes, statusWord, cmToIn, inToCm };
+  return { SIZE_CHARTS, SIZE_ORDER, ZONES, BODY_FIELDS, SIZE_SYSTEMS, analyze, chartFor, sizesFor,
+           buildCustomChart, silhouetteNotes, statusWord, sizeLabels, denimSize, hashIndex, cmToIn, inToCm };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = FitEngine;
+if (typeof window !== 'undefined') window.FitEngine = FitEngine;

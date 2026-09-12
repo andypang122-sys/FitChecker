@@ -36,6 +36,12 @@ and `Procfile` are already in this folder.
    - **`FITCHECK_ADMIN_KEY`** = a long random string you choose. This is your
      moderation password and it stays stable across restarts (no disk needed).
    - **`FITCHECK_DATA_DIR`** = the mount path of a **persistent disk** (e.g. `/data`).
+   - **`FITCHECK_TRUST_PROXY`** = leave unset (defaults on) behind Railway,
+     Render or Fly, so rate limiting sees the real client IP from
+     `X-Forwarded-For` instead of lumping every user together as the proxy.
+     Set it to `0` **only** if you expose the server directly to the internet —
+     there the header is client-controlled and forging it would hand anyone an
+     unlimited login budget.
 4. Deploy. The host assigns a public HTTPS URL. `$PORT` is handled for you.
 
 > **A persistent disk is no longer optional.** This used to say the disk was a
@@ -136,13 +142,19 @@ packages.
 
 | Data | Where it goes | Evidence |
 |------|---------------|----------|
-| Email, display name, password hash | **Server** — `accounts.json` | `account_register`, server.py |
+| Email, display name, password hash | **Server** — `accounts.json` (scrypt) | `account_register`, server.py |
 | Body measurements, wardrobe, favourites | **Server** — `wardrobe/<hash>.json` | `_wardrobe_path`, server.py |
 | Photos (community posts) | **Server** — `data/outfits.json` + `data/thumbs/` | `outfits_submit`, server.py |
 | Size-chart screenshots | **Sent to Google (Gemini API)** | `_gemini_vision`, server.py |
 | UI strings | **Sent to Google (translate endpoint)** | `gtx_translate`, server.py |
 | Ad identifiers | **Third-party ad network** | `adsbygoogle` in monetize.js |
+| Fit reports (brand/garment/size/outcome) | **Server, anonymous** — no account, no measurements | `fit_feedback_submit`, server.py |
 | Quiz analytics | Device-only, never transmitted | js/analytics.js |
+
+> The fit-report row is **not** a "collected data type" for either store: it
+> carries no identifier and cannot be linked to a person or device. Declare it
+> only if you later add an id to it — at which point it becomes App Activity /
+> linked-to-user and both questionnaires change.
 
 ### Apple — App Privacy
 Declare **collected, linked to identity, NOT used for tracking**:
