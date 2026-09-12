@@ -30,6 +30,7 @@
   --warn-ink: #6b4a13;
   --bad: #b23b2e;
   --bad-soft: #f8e7e3;
+  --bad-ink: #7d281e;
   --info: #5b6b8c;
   --info-soft: #e9edf4;
 
@@ -791,6 +792,34 @@ textarea.input { resize: vertical; min-height: 76px; }
 /* "Did it actually fit?" */
 .fb-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .fb-btn { flex: 1 1 auto; min-width: 120px; }
+
+/* Brand + size on a wardrobe item. */
+.item-label { font-size: 14px; margin: 8px 0 0; }
+.item-label .linklike { margin-left: 8px; font-size: 13px; }
+
+/* Second-hand verdict. */
+.rs-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.rs-verdict.tone-good { background: var(--good-soft); color: var(--good-ink); }
+.rs-verdict.tone-warn { background: var(--warn-soft); color: var(--warn-ink); }
+.rs-verdict.tone-bad  { background: var(--bad-soft);  color: var(--bad-ink); }
+.rs-score {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.rs-line { font-size: 15.5px; font-weight: 600; }
+@media (max-width: 380px) {
+  .rs-verdict { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 
 .zone-list { display: flex; flex-direction: column; gap: 10px; }
 
@@ -1865,7 +1894,7 @@ body { transition: background .3s var(--ease-out), color .3s var(--ease-out); }
   --accent-soft: #35261a;
   --good: #7cc091;  --good-soft: #203426;  --good-ink: #a8d9b8;
   --warn: #d9a441;  --warn-soft: #382d16;  --warn-ink: #e8c37a;
-  --bad: #e58175;   --bad-soft: #3c211c;
+  --bad: #e58175;   --bad-soft: #3c211c;   --bad-ink: #f0b3aa;
   --info: #97a9cf;  --info-soft: #222b3b;
   --shadow: 0 1px 2px rgba(0,0,0,.45), 0 12px 32px -14px rgba(0,0,0,.6);
   --shadow-lg: 0 24px 70px -18px rgba(0,0,0,.8);

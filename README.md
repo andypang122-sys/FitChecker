@@ -48,6 +48,8 @@ then open **http://localhost:8000** in your browser. `server.py` (Python 3, no d
 | **The size on the tag** | Almost nothing is sold as "L". Every recommendation also shows US / UK / EU numbers, collar size for men's shirts, and a real **W×L** for jeans derived from your waist and inseam — the conversion is exactly where people buy the wrong thing. |
 | **Did it actually fit?** | After you've worn it, say whether it ran tight, loose or true. Reports accumulate into a personal calibration: if you consistently need more room than the chart assumes, later checks account for it (clamped to ±4 cm so it nudges a borderline call and never overrides your own measurements). |
 | **Brand reputation** | Fit reports are also shared anonymously — brand, garment, size and outcome, nothing else — so "this brand runs small" becomes a fact instead of a rumour. |
+| **Second-hand check** | Paste any Vinted / Depop / eBay / Grailed listing. It reads the seller's own measurements out of the free text — "pit to pit 56cm, length 68cm" — doubles the flat ones into real garment girths, and answers the only question that matters when there are no returns: will *this* garment fit *you*. |
+| **Proven by your closet** | Every wardrobe item records its brand and the size on the label, so the Size Passport can show the sizes you have actually proved fit — grouped per brand and per top/bottom/outerwear, with worn garments counting for more than unworn ones. It also flags brands that sold you two different sizes. |
 | **Fit map** | A body silhouette colored by zone so you see problem areas at a glance. |
 | **History** | Every fit check is saved to your account — reopen any past verdict. |
 | **Units** | Switch between cm and inches anywhere in Settings. |
@@ -88,6 +90,8 @@ FitChecker/
 │   ├── cloud.js        optional server account + wardrobe sync
 │   ├── fit-engine.js   size charts, fit math, real-world size labels
 │   ├── fit-feedback.js "did it fit?" reports + personal calibration
+│   ├── resale.js       reads seller measurements out of a listing
+│   ├── wardrobe.js     the closet (IndexedDB) + the per-brand size ledger
 │   ├── camera.js       live camera + upload + image compression
 │   └── app.js          views, routing, analyze wizard, results
 ├── server.py           static host + size-guide reader + accounts API
@@ -111,4 +115,4 @@ FitChecker/
 ./tests/run.sh
 ```
 
-No dependencies — Node for the fit engine, Python 3 for the server. Covers the size math, the calibration clamp, the real-world size labels, and the server's SSRF, password-hashing, rate-limiting and account-deletion behaviour.
+No dependencies — Node for the browser modules, Python 3 for the server. It parses every script the page loads (a duplicate declaration takes the whole app down at load time and no unit test importing one module in isolation would notice), then covers the size math, the calibration clamp, the real-world size labels, the second-hand listing parser, the closet size ledger, and the server's SSRF, password-hashing, rate-limiting and account-deletion behaviour.

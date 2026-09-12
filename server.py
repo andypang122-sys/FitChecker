@@ -1436,6 +1436,7 @@ def _clean_item(it):
         "slot": str(it.get("slot") or "top")[:16],
         "name": str(it.get("name") or "")[:80],
         "brand": str(it.get("brand") or "")[:60],
+        "size": str(it.get("size") or "")[:16],
         "colorHex": str(it.get("colorHex") or "#888888")[:9],
         "colorName": str(it.get("colorName") or "")[:24],
         "img": img,

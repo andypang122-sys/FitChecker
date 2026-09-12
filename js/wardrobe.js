@@ -74,6 +74,12 @@ const Wardrobe = (() => {
       slot: SLOT_OF[item.type] || 'top',
       name: item.name || '',
       brand: item.brand || '',
+      /* The size on the label. The closet knew the brand but not this,
+         which meant it could never answer the one question it is
+         uniquely placed to answer: what size actually fits you at this
+         brand. A garment you own and still wear is harder evidence than
+         any chart. */
+      size: item.size || '',
       colorHex: item.colorHex || '#888888',
       colorName: item.colorName || '',
       img: item.img,                 // WebP dataURL, already compressed by caller
@@ -142,7 +148,7 @@ const Wardrobe = (() => {
   async function putRaw(owner, rec) {
     await open();
     const full = Object.assign({
-      id: rec.id || uid(), owner, type: 'tshirt', slot: 'top', name: '', brand: '',
+      id: rec.id || uid(), owner, type: 'tshirt', slot: 'top', name: '', brand: '', size: '',
       colorHex: '#888888', colorName: '', img: '', price: null, createdAt: Date.now(), worn: 0, forSale: false
     }, rec, { owner, unsynced: false });
     return new Promise((resolve, reject) => {
@@ -153,6 +159,77 @@ const Wardrobe = (() => {
   }
 
   function markSynced(id) { return updateItem(id, { unsynced: false }); }
+
+  /* ---------- the size ledger ----------
+     What the closet knows that no size chart does: which sizes this
+     person actually owns and keeps wearing, per brand.
+
+     Every other number in the app is a prediction. This is evidence.
+     A garment hanging in the wardrobe that gets worn is proof that size
+     fits at that brand, and it outranks any model we could build.
+
+     Grouped by brand + slot (top / bottom / outer), because a brand's
+     tops and its trousers are cut to different ladders and lumping them
+     together would report a size for neither.
+
+     Wears break the tie, not item count: three unworn impulse buys in L
+     say less than one M worn thirty times. An unworn garment is exactly
+     the one that might not fit. */
+  const SIZE_SLOTS = ['top', 'bottom', 'outer'];
+
+  function normaliseBrand(name) {
+    return String(name || '').trim().replace(/\s+/g, ' ');
+  }
+
+  async function sizeLedger(owner) {
+    return ledgerFrom(await listItems(owner));
+  }
+
+  // Pure, so it can be tested without a browser database.
+  function ledgerFrom(items) {
+    const groups = new Map();
+
+    for (const it of items) {
+      const brand = normaliseBrand(it.brand);
+      const size = String(it.size || '').trim();
+      if (!brand || !size || SIZE_SLOTS.indexOf(it.slot) === -1) continue;
+
+      const key = brand.toLowerCase() + '|' + it.slot;
+      let g = groups.get(key);
+      if (!g) {
+        g = { brand, slot: it.slot, sizes: new Map(), items: 0, worn: 0 };
+        groups.set(key, g);
+      }
+      const sKey = size.toUpperCase();
+      const s = g.sizes.get(sKey) || { size, items: 0, worn: 0 };
+      s.items++;
+      s.worn += Number(it.worn) || 0;
+      g.sizes.set(sKey, s);
+      g.items++;
+      g.worn += Number(it.worn) || 0;
+    }
+
+    const out = [];
+    for (const g of groups.values()) {
+      const ranked = [...g.sizes.values()].sort((a, b) =>
+        (b.worn - a.worn) || (b.items - a.items) || String(a.size).localeCompare(String(b.size)));
+      out.push({
+        brand: g.brand,
+        slot: g.slot,
+        size: ranked[0].size,
+        items: g.items,
+        worn: g.worn,
+        // More than one size at a brand is worth showing, not hiding: it
+        // usually means the brand is inconsistent between cuts.
+        alternatives: ranked.slice(1).map(s => s.size),
+        // One never-worn item is a guess; several worn ones are a fact.
+        settled: ranked[0].worn > 0 && g.sizes.size === 1
+      });
+    }
+
+    return out.sort((a, b) => (b.worn - a.worn) || (b.items - a.items) ||
+                              a.brand.localeCompare(b.brand));
+  }
 
   async function estimateBytes(owner) {
     const items = await listItems(owner);
@@ -318,7 +395,7 @@ const Wardrobe = (() => {
 
   return {
     ready, addItem, listItems, getItem, updateItem, deleteItem, count, estimateBytes,
-    putRaw, markSynced,
+    putRaw, markSynced, sizeLedger, ledgerFrom,
     compress, dominantColour, removeBackground, SLOT_OF,
     listOutfits, saveOutfit, deleteOutfit
   };

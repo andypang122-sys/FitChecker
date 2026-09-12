@@ -510,6 +510,7 @@
     wardrobe: renderWardrobe,
     favourites: renderFavourites,
     passport: renderPassport,
+    resale: renderResale,
     foryou: renderForYou,
     colours: renderColours,
     outfits: renderOutfits,
@@ -522,7 +523,7 @@
   };
 
   // Routes reached via the "More" tab — they light up the More nav item.
-  const MORE_ROUTES = ['more', 'profiles', 'passport', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard'];
+  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard'];
 
   function currentRoute() {
     const hash = location.hash.replace(/^#\//, '') || 'home';
@@ -764,6 +765,7 @@
     { route: 'analyze',    label: 'Check a fit',   cls: 'g-tshirt', icon: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="m9 7 1.5-3h3L15 7"/><circle cx="12" cy="13" r="3.5"/>' },
     { route: 'wardrobe',   label: 'My Wardrobe',   cls: 'g-jacket', icon: '<path d="M12 3v7"/><path d="M12 10 5 13.5V20h14v-6.5L12 10Z"/><path d="M12 10c-2 0-3.2-1-3.2-2.4A2.2 2.2 0 0 1 11 5.4"/>' },
     { route: 'passport',   label: 'Size Passport', cls: 'g-shirt',  icon: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M13 9h5M13 12.5h5M6 15.5h8"/>' },
+    { route: 'resale',     label: 'Second-hand',   cls: 'g-swoon',  icon: '<path d="M4 8h12l-2.5-2.5"/><path d="M20 16H8l2.5 2.5"/><circle cx="17" cy="8" r="2.4"/><circle cx="7" cy="16" r="2.4"/>' },
     { route: 'favourites', label: 'Favourites',    cls: 'g-dress',  icon: '<path d="M12 20.3 4.4 12.7a4.6 4.6 0 0 1 6.5-6.5l1.1 1.1 1.1-1.1a4.6 4.6 0 0 1 6.5 6.5L12 20.3Z"/>' },
     { route: 'outfits',    label: 'Outfit Battle', cls: 'g-hoodie', icon: '<path d="M12 7a2 2 0 1 1 2-2"/><path d="M12 7v2"/><path d="m12 9 8.2 6.1a1.6 1.6 0 0 1-1 2.9H4.8a1.6 1.6 0 0 1-1-2.9L12 9Z"/>' },
     { route: 'progress',   label: 'Progress',      cls: 'g-jeans',  icon: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3.5-4 3 2.5L20 7"/>' }
@@ -2553,6 +2555,205 @@
     return `👕 My FitChecker sizes\n\n${lines.join('\n')}\n\nMeasured with FitChecker — know your fit before you buy.`;
   }
 
+  /* ---------- second-hand listing check ----------
+     A different question from the rest of the app. On the high street you
+     pick between sizes; second-hand there is one garment, one size, and
+     usually no returns — so the answer is yes or no, and the seller's own
+     measurements are the only evidence there is. */
+
+  const RESALE_ZONE_LABEL = {
+    chest: 'Chest / pit-to-pit', waist: 'Waist', hips: 'Hips', thigh: 'Thigh',
+    shoulders: 'Shoulders', sleeveLength: 'Sleeve', torsoLength: 'Length', inseam: 'Inseam'
+  };
+
+  let resaleState = { text: '', type: 'tshirt', result: null, error: null };
+
+  function renderResale() {
+    const profile = getActiveProfile() || (guestBody && guestBody.chest != null
+      ? { name: 'Me', sex: guestSex(), body: guestBody } : null);
+
+    if (!profile || !profile.body || profile.body.chest == null) {
+      view.innerHTML = `
+        <div class="card">
+          <div class="card-title">Second-hand check</div>
+          <div class="empty">
+            <div class="empty-icon">🔁</div>
+            <p><strong>Add your measurements first.</strong></p>
+            <p class="muted">Then paste any Vinted, Depop, eBay or Grailed listing and I'll tell you whether that exact garment fits you — before you buy something you can't send back.</p>
+            <a class="btn btn-primary" href="#/analyze">Take my measurements</a>
+          </div>
+        </div>`;
+      return;
+    }
+
+    view.innerHTML = `
+      <div class="card">
+        <div class="card-title">Will this second-hand piece fit?</div>
+        <p class="muted small mb-16">Copy the seller's measurements straight out of the listing — "pit to pit 54cm, length 71cm" and so on. Most resale has no returns, so it's worth thirty seconds.</p>
+
+        <div class="section-label">What is it?</div>
+        <div id="rs-type">${typeTiles(RESALE_TYPES, resaleState.type, 'Garment type')}</div>
+
+        <div class="field mt-16">
+          <label for="rs-text">Paste the listing</label>
+          <textarea class="input" id="rs-text" rows="7" placeholder="Vintage Levi's denim jacket&#10;Pit to pit: 56cm&#10;Length 68cm&#10;Sleeve 62cm&#10;Shoulder to shoulder 47cm">${esc(resaleState.text)}</textarea>
+          <span class="hint">Paste the whole description — I'll pick out the numbers and ignore the rest.</span>
+        </div>
+
+        <div class="btn-row mt-16">
+          <button class="btn btn-primary btn-lg" id="rs-go">Check the fit</button>
+          ${resaleState.text ? '<button class="btn btn-ghost" id="rs-clear">Clear</button>' : ''}
+        </div>
+      </div>
+      <div id="rs-out">${resaleOutputHTML()}</div>`;
+
+    wireTypeTiles(view, key => {
+      resaleState.type = key;
+      resaleState.result = null;
+      resaleState.error = null;
+      document.getElementById('rs-out').innerHTML = '';
+    });
+
+    const ta = document.getElementById('rs-text');
+    ta.oninput = () => { resaleState.text = ta.value; };
+
+    document.getElementById('rs-go').onclick = () => {
+      resaleState.text = ta.value;
+      runResaleCheck(profile);
+    };
+    const clear = document.getElementById('rs-clear');
+    if (clear) clear.onclick = () => {
+      resaleState = { text: '', type: resaleState.type, result: null, error: null };
+      renderResale();
+    };
+  }
+
+  // Only garments the fit engine has a size chart for.
+  const RESALE_TYPES = Object.keys(FitEngine.SIZE_CHARTS)
+    .map(key => ({ key, label: FitEngine.SIZE_CHARTS[key].label }));
+
+  function runResaleCheck(profile) {
+    if (!resaleState.text.trim()) {
+      toast('Paste the listing text first.', 'err');
+      return;
+    }
+    const easeBias = (typeof FitFeedback !== 'undefined')
+      ? FitFeedback.calibration(resaleState.type) : 0;
+    const out = Resale.check(resaleState.text, resaleState.type, profile.body,
+                             'regular', profile.sex, { easeBias });
+    if (!out.ok) {
+      resaleState.result = null;
+      resaleState.error = out.reason;
+    } else {
+      resaleState.result = out;
+      resaleState.error = null;
+    }
+    document.getElementById('rs-out').innerHTML = resaleOutputHTML();
+  }
+
+  function resaleOutputHTML() {
+    if (resaleState.error === 'nothing-found') {
+      return `
+        <div class="card">
+          <div class="card-title">No measurements in that listing</div>
+          <p>I couldn't find any measurements to work from, so there is nothing honest to tell you — a size label alone is exactly the guess this is meant to replace.</p>
+          <p class="muted small">Most sellers will measure if you ask. The two that matter most: <strong>pit to pit</strong> (or waist, for trousers) and <strong>length</strong>.</p>
+        </div>`;
+    }
+    const out = resaleState.result;
+    if (!out) return '';
+
+    const r = out.result;
+    const m = out.parsed.measurements;
+    const tone = r.score >= 82 ? 'good' : r.score >= 65 ? 'warn' : 'bad';
+
+    const problems = Object.entries(r.zones)
+      .filter(([, z]) => z.status !== 'good' && z.status !== 'info')
+      .sort((a, b) => a[1].score - b[1].score);
+
+    return `
+      <div class="card">
+        <div class="rs-verdict tone-${tone}">
+          <span class="rs-score">${r.score}</span>
+          <span class="rs-line">${esc(r.verdict)}</span>
+        </div>
+
+        <div class="conf-row mt-16">
+          <span class="small muted">Confidence ${r.confidence}%${
+            r.missingZones && r.missingZones.length
+              ? ' — the seller didn\'t give ' + esc(r.missingZones.map(z => (RESALE_ZONE_LABEL[z] || z).toLowerCase()).join(' or '))
+              : ' — the seller measured everything that matters'}</span>
+          <div class="conf-track"><div class="conf-fill" style="width:${r.confidence}%"></div></div>
+        </div>
+
+        ${problems.length ? `
+          <div class="section-label" style="margin-top:18px">Where it goes wrong</div>
+          ${problems.map(([zk, z]) => `
+            <div class="zone-card">
+              <span class="zone-dot ${esc(z.status)}"></span>
+              <div class="zone-body">
+                <div class="zone-name">${esc(RESALE_ZONE_LABEL[zk] || zk)}</div>
+                <div class="zone-msg">${esc(z.message)}</div>
+              </div>
+            </div>`).join('')}
+        ` : '<p class="mt-16">Every measurement the seller gave lands in a good range for you.</p>'}
+
+        <div class="section-label" style="margin-top:18px">What I read from the listing</div>
+        <table class="size-table">
+          <thead><tr><th>Measurement</th><th>Seller said</th><th style="text-align:right">Garment</th></tr></thead>
+          <tbody>
+            ${Object.keys(m).map(z => `
+              <tr>
+                <td>${esc(RESALE_ZONE_LABEL[z] || z)}</td>
+                <td class="muted">${esc(String(m[z].raw))}${esc(m[z].unit || '')}${m[z].flat ? ' flat' : ''}</td>
+                <td style="text-align:right;font-weight:700">${disp(m[z].cm)} ${units()}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <p class="muted small mt-8">Flat measurements are doubled to get the garment all the way round. If a number looks wrong, the seller's tape is the likeliest culprit — ask them to re-measure.</p>
+      </div>`;
+  }
+
+  // Plural, for the ledger's per-brand rows — distinct from the singular
+  // SLOT_LABEL the outfit builder uses further down.
+  const LEDGER_SLOT_LABEL = { top: 'Tops', bottom: 'Bottoms', outer: 'Outerwear' };
+
+  /* Everything above this on the Passport is a prediction from a tape
+     measure. This is the opposite: sizes proven by garments the wearer
+     owns and keeps putting on. When the two disagree, this one is right. */
+  function paintSizeLedger(u) {
+    const host = document.getElementById('pp-ledger');
+    if (!host || !u) return;
+
+    Wardrobe.sizeLedger(u.email).then(rows => {
+      if (!host.isConnected) return;
+      if (!rows.length) {
+        host.innerHTML = `
+          <div class="card">
+            <div class="card-title">Proven by your closet</div>
+            <p class="muted small">Add the brand and size to the pieces in your wardrobe and this fills in with the sizes you <em>know</em> fit — no estimating.</p>
+            <a class="btn btn-secondary btn-sm mt-8" href="#/wardrobe">Open my wardrobe</a>
+          </div>`;
+        return;
+      }
+      host.innerHTML = `
+        <div class="card">
+          <div class="card-title">Proven by your closet</div>
+          <p class="muted small mb-16">From ${rows.reduce((n, r) => n + r.items, 0)} labelled ${rows.reduce((n, r) => n + r.items, 0) === 1 ? 'piece' : 'pieces'} you own. Worn garments count for more than unworn ones.</p>
+          <div class="pp-list">
+            ${rows.map(r => `
+              <div class="pp-row">
+                <span>${esc(r.brand)} <span class="muted small">· ${esc(LEDGER_SLOT_LABEL[r.slot] || r.slot)}</span></span>
+                <strong>${esc(r.size)}${r.settled ? ' <span class="badge">proven</span>' : ''}</strong>
+              </div>
+              ${r.alternatives.length
+                ? `<p class="small muted" style="margin:-4px 0 8px">You also own ${esc(r.alternatives.join(', '))} here — this brand isn't consistent across cuts.</p>`
+                : ''}`).join('')}
+          </div>
+        </div>`;
+    }).catch(() => { /* no IndexedDB (private mode) — the card just stays out */ });
+  }
+
   function renderPassport() {
     const u = Auth.user();
     // Guests have a guestBody (from the Analyze wizard) but no saved profile —
@@ -2598,7 +2799,10 @@
           <button class="btn btn-primary btn-lg" id="pp-share">Share my sizes</button>
           <a class="btn btn-secondary" href="#/foryou">Shop my size</a>
         </div>
-      </div>`;
+      </div>
+      <div id="pp-ledger"></div>`;
+
+    paintSizeLedger(u);
 
     document.getElementById('pp-share').onclick = async () => {
       const text = passportShareText(profile, sizes);
@@ -3938,6 +4142,20 @@
 
   /* ---------- add an item ---------- */
 
+  /* Autocomplete from the brands we already model, so the same shop is
+     spelled one way across the closet — the ledger groups by this string
+     and "COS", "cos" and "Cos " would otherwise be three brands. */
+  function brandDatalist() {
+    let names = [];
+    try {
+      if (typeof Brands !== 'undefined' && Brands.list) {
+        names = Brands.list().map(b => b.name).filter(n => n && n !== 'Generic');
+      }
+    } catch (e) {}
+    if (!names.length) return '';
+    return `<datalist id="ward-brands">${names.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+  }
+
   function openAddItem(owner) {
     Camera.pickImage({
       onImage: raw => processNewItem(owner, raw),
@@ -3967,7 +4185,17 @@
           <label for="add-price">Price paid <span class="muted small">(optional)</span></label>
           <input class="input" id="add-price" type="number" step="0.01" inputmode="decimal" placeholder="for cost-per-wear">
         </div>
+        <div class="field">
+          <label for="add-brand">Brand</label>
+          <input class="input" id="add-brand" type="text" placeholder="e.g. Uniqlo" value="" list="ward-brands">
+        </div>
+        <div class="field">
+          <label for="add-size">Size on the label</label>
+          <input class="input" id="add-size" type="text" placeholder="M, 32, W32 L34…" value="" maxlength="16">
+        </div>
       </div>
+      <p class="hint mb-8">Brand and size are what turn your closet into a record of what actually fits you — worth the two seconds.</p>
+      ${brandDatalist()}
       <div class="add-colour">
         <span class="ward-dot" id="add-swatch" style="background:${suggest.hex}"></span>
         <span class="muted small">Detected colour: <strong id="add-cname">${esc(suggest.name || '—')}</strong></span>
@@ -4000,6 +4228,8 @@
         const rec = {
           type: draft.type,
           name: overlay.querySelector('#add-name').value.trim(),
+          brand: overlay.querySelector('#add-brand').value.trim(),
+          size: overlay.querySelector('#add-size').value.trim(),
           colorHex: draft.colorHex,
           colorName: draft.colorName,
           img,
@@ -4041,6 +4271,10 @@
       <div class="detail-img"><img src="${it.img}" alt="${esc(it.name || '')}"></div>
       <h3 class="card-title" style="margin-top:12px">${esc(it.name || TYPE_LABEL[it.type] || 'Item')}</h3>
       <p class="muted small">${esc(TYPE_LABEL[it.type] || '')}${it.colorName ? ' · ' + esc(it.colorName) : ''} · worn ${worn}×</p>
+      ${(it.brand || it.size)
+        ? `<p class="item-label">${it.brand ? `<strong>${esc(it.brand)}</strong>` : ''}${it.brand && it.size ? ' · ' : ''}${it.size ? `size ${esc(it.size)}` : ''}
+             <button class="linklike" data-act="label">edit</button></p>`
+        : `<button class="btn btn-ghost btn-sm mt-8" data-act="label">+ Add brand &amp; size</button>`}
       ${costLine}
 
       <div class="btn-row mt-16" style="flex-wrap:wrap">
@@ -4068,6 +4302,34 @@
     };
     overlay.querySelector('[data-act="sell"]').onclick = () => {
       overlay.querySelector('#sell-panel').classList.toggle('hidden');
+    };
+    /* Backfill for everything added before the closet recorded a label —
+       without this the ledger only ever learns from new items. */
+    overlay.querySelector('[data-act="label"]').onclick = () => {
+      const lm = openModal(`
+        <h3 class="card-title">What's on the label?</h3>
+        <p class="muted small mb-16">This is how the closet learns your real size at each brand.</p>
+        <div class="field"><label for="lb-brand">Brand</label>
+          <input class="input" id="lb-brand" type="text" value="${esc(it.brand || '')}" placeholder="e.g. Uniqlo" list="ward-brands" autofocus></div>
+        <div class="field mt-16"><label for="lb-size">Size</label>
+          <input class="input" id="lb-size" type="text" value="${esc(it.size || '')}" placeholder="M, 32, W32 L34…" maxlength="16"></div>
+        ${brandDatalist()}
+        <div class="btn-row" style="flex-direction:column;margin-top:16px">
+          <button class="btn btn-primary btn-block" id="lb-save">Save</button>
+          <button class="btn btn-ghost btn-block" data-act="cancel">Cancel</button>
+        </div>`);
+      lm.querySelector('[data-act="cancel"]').onclick = () => lm.remove();
+      lm.querySelector('#lb-save').onclick = async () => {
+        const next = await Wardrobe.updateItem(id, {
+          brand: lm.querySelector('#lb-brand').value.trim(),
+          size: lm.querySelector('#lb-size').value.trim()
+        });
+        if (Cloud.isLinked() && next) Cloud.putItem(next).catch(() => {});
+        lm.remove();
+        overlay.remove();
+        toast('Saved to your size record.', 'ok');
+        renderWardrobe();
+      };
     };
     const priceBtn = overlay.querySelector('[data-act="price"]');
     if (priceBtn) priceBtn.onclick = () => {
