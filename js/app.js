@@ -520,11 +520,12 @@
     help: renderHelp,
     more: renderMore,
     today: renderWearToday,
+    style: renderStyle,
     login: renderAuth
   };
 
   // Routes reached via the "More" tab — they light up the More nav item.
-  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard'];
+  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard', 'style'];
 
   function currentRoute() {
     const hash = location.hash.replace(/^#\//, '') || 'home';
@@ -1139,6 +1140,8 @@
           </div>
         </div>
 
+        ${styleCardHTML()}
+
         <div class="card">
           <div class="card-title">How FitChecker works</div>
           <div class="steps-3">
@@ -1203,6 +1206,8 @@
         <div class="stat"><div class="num">${analyses.length}</div><div class="lbl">Fit checks</div></div>
         <div class="stat"><div class="num">${avg == null ? '—' : avg}</div><div class="lbl">Avg fit score</div></div>
       </div>
+
+      ${styleCardHTML()}
 
       ${quickActionsCard()}
 
@@ -2429,7 +2434,7 @@
         <p class="small muted rr-basis">${esc(r.returnRisk.basis)}</p>
       </div>` : ''}
 
-      ${(typeof RECS !== 'undefined' && Array.isArray(RECS) && RECS.some(i => i.types.includes(r.garmentType))) ? `
+      ${rankedRecs().some(x => x.rec.types.includes(r.garmentType)) ? `
       <div class="promo-card promo-card-hero">
         <span class="promo-icon">${REC_ICON}</span>
         <div class="promo-body">
@@ -2723,7 +2728,10 @@
 
   const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3 4.4 12.7a4.6 4.6 0 0 1 6.5-6.5l1.1 1.1 1.1-1.1a4.6 4.6 0 0 1 6.5 6.5L12 20.3Z"/></svg>';
 
-  function recRow(item) {
+  /* `why` is the matched-style line from StyleProfile.reason. Checked as a
+     string because recRow is also handed straight to Array#map, which
+     passes an index as the second argument. */
+  function recRow(item, why) {
     const link = item.aff || item.url;
     const id = favId(item);
     const faved = isFav(id);
@@ -2732,6 +2740,7 @@
         <a class="list-row rec-row" href="${esc(link)}" target="_blank" rel="noopener sponsored">
           ${recThumb(item)}
           <span class="row-main">
+            ${typeof why === 'string' && why ? `<span class="rec-why">${esc(why)}</span>` : ''}
             <span class="title">${esc(item.name)}</span>
             <span class="sub">${item.brand ? `<span class="rec-brand">${esc(item.brand)}</span> ` : ''}${esc(item.note)}</span>
           </span>
@@ -2757,29 +2766,180 @@
     });
   }
 
+  /* ==========================================================
+     STYLE PROFILE — who you shop for, your style niches, budget.
+     The why and the ranking rules live in style-profile.js.
+     ========================================================== */
+  function getStyle() { return StyleProfile.load(Auth); }
+
+  function setStyle(p) {
+    const saved = StyleProfile.save(Auth, p);
+    /* A guest with no size-chart sex yet has just told us which side of
+       the shop they wear, so the size charts follow the same answer. */
+    if (!Auth.user() && !guestSex() && (saved.gender === 'female' || saved.gender === 'male')) setGuestSex(saved.gender);
+    return saved;
+  }
+
+  function shoppingGender() { return StyleProfile.genderFor(getStyle(), userSex()); }
+
+  /* The catalogue this person may see, best first. */
+  function rankedRecs(ctx) {
+    const recs = (typeof RECS !== 'undefined' && Array.isArray(RECS)) ? RECS : [];
+    return StyleProfile.rank(recs, getStyle(), Object.assign({ sex: userSex() }, ctx || {}));
+  }
+
+  function styleCardHTML() {
+    if (getStyle().done) return '';
+    return `
+      <a class="card style-promo" href="#/style">
+        <span class="style-promo-e" aria-hidden="true">🧢💼🌼</span>
+        <span class="style-promo-body">
+          <strong>What’s your style?</strong>
+          <span class="muted small">Female or male, streetwear to old money — tell us once and For You shows shops that fit how you dress.</span>
+        </span>
+        <span class="hl-more">Set up →</span>
+      </a>`;
+  }
+
+  let styleDraft = null;
+
+  function renderStyle() {
+    const current = getStyle();
+    const bodySex = userSex();
+    if (!styleDraft) {
+      styleDraft = {
+        gender: current.gender || (bodySex === 'female' || bodySex === 'male' ? bodySex : null),
+        styles: current.styles.slice(),
+        budget: current.budget
+      };
+    }
+    const d = styleDraft;
+    const max = StyleProfile.MAX_STYLES;
+
+    view.innerHTML = `
+      <div class="card">
+        <h2 class="mb-8">Your style</h2>
+        <p class="muted small">Three quick answers, and For You shows shops that fit how you actually dress. Change them any time.</p>
+      </div>
+
+      <div class="card" id="style-gender">
+        <div class="style-step"><span class="style-num">1</span>Who are you shopping for?</div>
+        <div class="gender-grid">
+          ${StyleProfile.GENDERS.map(g => `
+            <button class="gender-opt ${d.gender === g.id ? 'on' : ''}" data-gender="${g.id}" aria-pressed="${d.gender === g.id}">
+              <span class="gender-e" aria-hidden="true">${g.e}</span>
+              <span class="gender-l">${esc(g.label)}</span>
+              <span class="gender-s">${esc(g.sub)}</span>
+            </button>`).join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="style-step"><span class="style-num">2</span>Your style <span class="muted small">pick up to ${max} — the first counts most</span></div>
+        <div class="style-grid">
+          ${StyleProfile.STYLES.map(s => {
+            const i = d.styles.indexOf(s.id);
+            return `
+            <button class="style-opt ${i > -1 ? 'on' : ''}" data-style="${s.id}" aria-pressed="${i > -1}">
+              ${i > -1 ? `<span class="style-rank">${i + 1}</span>` : ''}
+              <span class="style-e" aria-hidden="true">${s.e}</span>
+              <span class="style-l">${esc(s.label)}</span>
+              <span class="style-s">${esc(s.look)}</span>
+            </button>`;
+          }).join('')}
+        </div>
+        <p class="muted small mt-8">${d.styles.length
+          ? `${d.styles.length} of ${max} picked.`
+          : 'Skip it and For You shows a bit of everything.'}</p>
+      </div>
+
+      <div class="card">
+        <div class="style-step"><span class="style-num">3</span>Budget <span class="muted small">optional</span></div>
+        <div class="chip-row">
+          ${StyleProfile.BUDGETS.map(b => `<button class="chip ${d.budget === b.id ? 'selected' : ''}" data-budget="${b.id}">${esc(b.id === 'any' ? b.label : b.label + ' ' + b.sub)}</button>`).join('')}
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block btn-lg" id="style-save">${current.done ? 'Save my style' : 'Show me my picks'}</button>
+      ${current.done ? '<button class="btn btn-ghost btn-block mt-8" id="style-cancel">Cancel</button>' : ''}`;
+
+    const redraw = () => { const y = window.scrollY; renderStyle(); window.scrollTo(0, y); };
+
+    view.querySelectorAll('[data-gender]').forEach(b => b.onclick = () => {
+      d.gender = b.getAttribute('data-gender');
+      view.querySelectorAll('[data-gender]').forEach(x => {
+        const on = x === b;
+        x.classList.toggle('on', on);
+        x.setAttribute('aria-pressed', on);
+      });
+    });
+    view.querySelectorAll('[data-style]').forEach(b => b.onclick = () => {
+      const id = b.getAttribute('data-style');
+      const i = d.styles.indexOf(id);
+      if (i > -1) d.styles.splice(i, 1);
+      else if (d.styles.length >= max) { toast(`Pick up to ${max} — tap one you've chosen to swap it out.`, 'err'); return; }
+      else d.styles.push(id);
+      redraw();
+    });
+    view.querySelectorAll('[data-budget]').forEach(b => b.onclick = () => {
+      d.budget = b.getAttribute('data-budget');
+      view.querySelectorAll('[data-budget]').forEach(x => x.classList.toggle('selected', x === b));
+    });
+    document.getElementById('style-save').onclick = () => {
+      if (!d.gender) {
+        toast('Choose who you’re shopping for first.', 'err');
+        document.getElementById('style-gender').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      const saved = setStyle({ gender: d.gender, styles: d.styles, budget: d.budget, done: true });
+      styleDraft = null;
+      toast(saved.styles.length ? 'Style saved — your picks are ready ✦' : 'Saved — showing a bit of everything', 'ok');
+      go('foryou');
+    };
+    const cancel = document.getElementById('style-cancel');
+    if (cancel) cancel.onclick = () => { styleDraft = null; go('foryou'); };
+  }
+
   function renderForYou() {
     const recs = (typeof RECS !== 'undefined' && Array.isArray(RECS)) ? RECS : [];
+    const profile = getStyle();
+    const gender = shoppingGender();
     const last = latestAnalysis();
     const lastType = last && last.result ? last.result.garmentType : null;
     const lastPref = last && last.result ? last.result.fitPref : null;
     const lastBest = last && last.result ? last.result.bestSize : null;
 
-    const fitOk = item => !item.fits || !lastPref || item.fits.includes(lastPref);
-    const primary = lastType ? recs.filter(i => i.types.includes(lastType) && fitOk(i)) : [];
-    const shown = new Set(primary);
+    const ranked = rankedRecs({ type: lastType, fitPref: lastPref });
 
-    // the rest, grouped by garment type in chart order
+    /* Each shop appears once, in the first section that claims it. */
+    const shown = new Set();
+    const take = (list, n) => {
+      const out = [];
+      for (const x of list) {
+        if (out.length >= n) break;
+        if (!shown.has(x.rec)) { shown.add(x.rec); out.push(x); }
+      }
+      return out;
+    };
+
+    const typeLabel = lastType && FitEngine.SIZE_CHARTS[lastType] ? FitEngine.SIZE_CHARTS[lastType].label : null;
+    const primary = lastType && StyleProfile.typeAllowed(lastType, gender)
+      ? take(ranked.filter(x => x.rec.types.includes(lastType)), 4) : [];
+
+    const styleSections = profile.styles
+      .map(id => ({ st: StyleProfile.style(id), items: take(ranked.filter(x => x.rec.styles.includes(id)), 5) }))
+      .filter(s => s.items.length);
+
     const groups = [];
     for (const [key, chart] of Object.entries(FitEngine.SIZE_CHARTS)) {
-      if (key === lastType) continue;
-      const items = recs.filter(i => !shown.has(i) && i.types.includes(key));
-      items.forEach(i => shown.add(i));
+      if (!StyleProfile.typeAllowed(key, gender)) continue;
+      const items = take(ranked.filter(x => x.rec.types.includes(key)), 6);
       if (items.length) groups.push({ label: chart.label, items });
     }
 
-    const typeLabel = lastType && FitEngine.SIZE_CHARTS[lastType] ? FitEngine.SIZE_CHARTS[lastType].label : null;
-
+    const row = x => recRow(x.rec, StyleProfile.reason(x));
     const favCount = listFavs().length;
+
     view.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
@@ -2788,19 +2948,30 @@
         </div>
         ${last && typeLabel
           ? `<p class="muted small">Matched to your last fitting — ${esc(typeLabel.toLowerCase())}${lastBest ? `, size <strong>${esc(lastBest)}</strong>` : ''}${lastPref ? `, ${esc(lastPref)} fit` : ''}. Tap ♥ to save one; links open the brand's site.</p>`
-          : `<p class="muted small">Hand-picked places to shop each garment type. Tap ♥ to save the ones you like. <a href="#/analyze">Run a fitting</a> and this page tailors itself to your size.</p>`}
+          : `<p class="muted small">Places to shop each garment type. Tap ♥ to save the ones you like. <a href="#/analyze">Run a fitting</a> and this page tailors itself to your size.</p>`}
+        ${profile.done
+          ? `<div class="style-summary"><span>${esc(StyleProfile.summary(profile))}</span><a href="#/style">Edit style</a></div>`
+          : ''}
       </div>
+
+      ${styleCardHTML()}
 
       ${primary.length ? `
       <div class="card">
         <div class="section-label">Because you checked a ${esc(typeLabel.toLowerCase())}</div>
-        <div class="row-list">${primary.map(recRow).join('')}</div>
+        <div class="row-list">${primary.map(row).join('')}</div>
       </div>` : ''}
+
+      ${styleSections.map(s => `
+      <div class="card">
+        <div class="section-label">${s.st.e} For your ${esc(s.st.label.toLowerCase())} style</div>
+        <div class="row-list">${s.items.map(row).join('')}</div>
+      </div>`).join('')}
 
       ${groups.map(g => `
       <div class="card">
         <div class="section-label">${esc(g.label)}</div>
-        <div class="row-list">${g.items.map(recRow).join('')}</div>
+        <div class="row-list">${g.items.map(row).join('')}</div>
       </div>`).join('')}
 
       ${recs.length ? '' : `
@@ -4440,14 +4611,17 @@
     if (!items.length) return ''; // nothing to analyse yet
     const profile = getActiveProfile();
     const owned = new Set(items.map(i => i.type));
-    const recs = (typeof RECS !== 'undefined' && Array.isArray(RECS)) ? RECS : [];
+    const recs = rankedRecs().map(x => x.rec);   // their side of the shop, their styles first
     const sizeByType = {};
     if (profile && profile.body) {
       computeSizes(profile).forEach(s => { sizeByType[s.type] = s.size; });
     }
 
     const gaps = ESSENTIALS.filter(e => {
-      if (e.femaleOnly && (!profile || profile.sex !== 'female')) return false;
+      /* A dress gap only makes sense for someone shopping womenswear —
+         or shopping both, when their measured body is a woman's. */
+      const sg = shoppingGender();
+      if (e.femaleOnly && (sg === 'male' || (sg === 'all' && (!profile || profile.sex !== 'female')))) return false;
       return !e.have.some(t => owned.has(t));
     });
 
@@ -4868,6 +5042,8 @@
     const items = [
       { route: 'wardrobe', label: 'My Wardrobe', sub: 'Your closet · build & save outfits · ✦ Pro',
         icon: '<path d="M12 3v7"/><path d="M12 10 5 13.5V20h14v-6.5L12 10Z"/><path d="M12 10c-2 0-3.2-1-3.2-2.4A2.2 2.2 0 0 1 11 5.4"/>' },
+      { route: 'style', label: 'My style', sub: getStyle().done ? esc(StyleProfile.summary(getStyle())) : 'Female or male, style niches and budget',
+        icon: '<path d="M8 3 4 6l2 3 1.5-1V19h9V8L18 9l2-3-4-3c-.8 1.2-2.2 2-4 2s-3.2-.8-4-2Z"/>' },
       { route: 'favourites', label: 'Favourites', sub: 'Clothing you saved from For You',
         icon: '<path d="M12 20.3 4.4 12.7a4.6 4.6 0 0 1 6.5-6.5l1.1 1.1 1.1-1.1a4.6 4.6 0 0 1 6.5 6.5L12 20.3Z"/>' },
       { route: 'profiles', label: 'My measurements', sub: 'Body profiles & photos',
@@ -4927,6 +5103,14 @@
         </div>` : `
         <p class="muted small mb-16">You're browsing as a guest. An account lets you save measurements, use the camera, add photos and keep history.</p>
         <button class="btn btn-primary" data-promo-login>Log in / Create free account</button>`}
+      </div>
+
+      <div class="card">
+        <div class="card-title">Style & shopping</div>
+        <p class="muted small mb-16">${getStyle().done
+          ? esc(StyleProfile.summary(getStyle())) + ' — For You is built from this.'
+          : 'Tell FitChecker whether you shop womenswear or menswear, the styles you wear and your budget. For You is built from it.'}</p>
+        <a class="btn btn-secondary" href="#/style">${getStyle().done ? 'Edit my style' : 'Set my style'}</a>
       </div>
 
       <div class="card">

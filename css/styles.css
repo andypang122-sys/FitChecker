@@ -811,6 +811,32 @@ textarea.input { resize: vertical; min-height: 76px; }
 .today-remind { display: block; margin: 12px auto 0; padding: 0; background: none; border: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 p.today-remind { text-decoration: none; cursor: default; text-align: center; }
 
+/* ---------- style profile ---------- */
+.style-step { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+.style-step .muted { font-weight: 500; }
+.style-num { width: 26px; height: 26px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--text); color: var(--bg); font-size: 13px; font-weight: 700; }
+.gender-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.gender-opt, .style-opt { font: inherit; color: var(--text); cursor: pointer; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); transition: border-color .15s, background .15s, transform .15s; }
+.gender-opt:hover, .style-opt:hover { transform: translateY(-1px); border-color: var(--text-3); }
+.gender-opt.on, .style-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.gender-opt { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 16px 8px; text-align: center; }
+.gender-e { font-size: 28px; line-height: 1; }
+.gender-l { font-weight: 700; font-size: 14.5px; }
+.gender-s { font-size: 11.5px; line-height: 1.3; color: var(--text-2); }
+.style-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.style-opt { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 13px 12px; text-align: left; }
+.style-e { font-size: 22px; line-height: 1; margin-bottom: 2px; }
+.style-l { font-weight: 700; font-size: 14px; padding-right: 22px; }
+.style-s { font-size: 12px; line-height: 1.35; color: var(--text-2); }
+.style-rank { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
+.style-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13.5px; font-weight: 600; }
+.style-summary a { font-weight: 700; white-space: nowrap; }
+.style-promo { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
+.style-promo-e { font-size: 22px; letter-spacing: -3px; flex-shrink: 0; }
+.style-promo-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.rec-why { display: block; margin: 2px 0 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+@media (max-width: 360px) { .gender-grid, .style-grid { grid-template-columns: 1fr; } }
+
 /* Ageing measurements. Loud enough to be read, quiet enough that
    somebody six months out doesn't feel told off. */
 .stale-note {

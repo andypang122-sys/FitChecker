@@ -36,6 +36,10 @@ echo "── daily outfit log ────────────────�
 node tests/test_wearlog.js
 
 echo
+echo "── style profile & catalogue ───────────────"
+node tests/test_style_profile.js
+
+echo
 echo "── server ──────────────────────────────────"
 "$PY" tests/test_server.py
 
