@@ -799,6 +799,7 @@ textarea.input { resize: vertical; min-height: 76px; }
 .today-insight { display: flex; gap: 9px; align-items: flex-start; margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 13.5px; line-height: 1.45; }
 .today-insight > span:first-child { flex-shrink: 0; }
 .today-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 4px; }
+.today-label .muted { text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 4px; }
 .wear-pick { position: relative; }
 .wear-pick.on { outline: 2.5px solid var(--accent); outline-offset: 2px; }
 .wear-pick.on::after { content: '✓'; position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
