@@ -873,6 +873,32 @@
      TODAY'S OUTFIT — the daily check-in. The why lives in wearlog.js.
      ========================================================== */
   const WEAR_MILESTONES = [3, 7, 14, 30, 60, 100, 365];
+  const WEAR_REMIND_ID = 'fitcheck-wear';
+  const WEAR_REMIND_KEY = 'fitcheck_wear_remind';   // the hour, or absent when off
+
+  function wearRemindHour() {
+    try { const v = localStorage.getItem(WEAR_REMIND_KEY); return v == null || v === '' ? null : Number(v); }
+    catch (e) { return null; }
+  }
+
+  /* Remind reschedules a recurring item at "now + 1 day" when it fires, so
+     a nudge first seen at noon would drift to noon for good. Re-pinning on
+     launch and after each save keeps it at its hour, and skips a day that
+     is already logged. */
+  function syncWearReminder() {
+    if (typeof Remind === 'undefined') return;
+    const u = Auth.user();
+    const h = wearRemindHour();
+    if (!u || h == null) { Remind.cancel(WEAR_REMIND_ID); return; }
+    const at = new Date();
+    at.setHours(h, 0, 0, 0);
+    if (WearLog.entry(u.email) || at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+    Remind.schedule({
+      id: WEAR_REMIND_ID, kind: 'wear', every: 1, at: at.getTime(),
+      title: '👕 What are you wearing today?',
+      body: 'Two taps — it teaches FitChecker which sizes really fit you.'
+    });
+  }
 
   function lastWornLabel(date, t) {
     const d = WearLog.daysBetween(date, t);
@@ -934,7 +960,25 @@
         : `<p class="muted small">Two taps from your closet. Each day you log teaches FitChecker which sizes really fit you — and shows what never leaves the hanger.</p>
           <a class="btn btn-primary btn-block mt-16" href="#/today">Log today’s outfit</a>`}
         ${ins.length ? `<p class="today-insight"><span>${ins[0].e}</span><span>${esc(ins[0].text)}${ins[0].link ? ` <a href="#/${ins[0].link}">Open →</a>` : ''}</span></p>` : ''}
+        ${wearRemindHour() == null
+          ? '<button class="today-remind" id="wear-remind">🔔 Remind me each morning at 08:00</button>'
+          : `<p class="today-remind muted small">🔔 Reminder each morning at ${String(wearRemindHour()).padStart(2, '0')}:00 · <button class="linklike" id="wear-remind-off">turn off</button></p>`}
       </div>`;
+    const on = slot.querySelector('#wear-remind');
+    if (on) on.onclick = () => {
+      try { localStorage.setItem(WEAR_REMIND_KEY, '8'); } catch (e) {}
+      syncWearReminder();
+      if (typeof Remind !== 'undefined') Remind.requestPermission();
+      toast('Reminder set for 08:00 🔔', 'ok');
+      paintHomeToday(owner, items);
+    };
+    const off = slot.querySelector('#wear-remind-off');
+    if (off) off.onclick = () => {
+      try { localStorage.removeItem(WEAR_REMIND_KEY); } catch (e) {}
+      syncWearReminder();
+      toast('Morning reminder off', 'ok');
+      paintHomeToday(owner, items);
+    };
   }
 
   let wearDraft = null;
@@ -1064,6 +1108,7 @@
       const reports = WearLog.newFitReports(res.prev, res.entry, items);
       sendWearFitReports(reports);
       wearDraft = null;
+      syncWearReminder();   // today is logged, so the next nudge moves to tomorrow
       const s = WearLog.streak(WearLog.log(owner), t).count;
       toast(WEAR_MILESTONES.indexOf(s) > -1 && res.prev == null ? `🔥 ${s}-day streak!`
         : reports.length ? 'Saved — fit feedback noted ✦' : 'Outfit logged ✦', 'ok');
@@ -5067,6 +5112,7 @@
   Auth.restore();
   render();
   syncMeasureReminder();
+  syncWearReminder();
 
   // Pull measurements + favourites from the account so they're present on
   // whatever device this is. Re-renders if anything changed.

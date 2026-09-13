@@ -807,6 +807,8 @@ textarea.input { resize: vertical; min-height: 76px; }
 .wear-fit-row:last-of-type { border-bottom: none; }
 .wear-fit-name { display: block; font-weight: 600; font-size: 14px; margin-bottom: 7px; }
 .chip.chip-sm { padding: 5px 11px; font-size: 12.5px; }
+.today-remind { display: block; margin: 12px auto 0; padding: 0; background: none; border: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+p.today-remind { text-decoration: none; cursor: default; text-align: center; }
 
 /* Ageing measurements. Loud enough to be read, quiet enough that
    somebody six months out doesn't feel told off. */

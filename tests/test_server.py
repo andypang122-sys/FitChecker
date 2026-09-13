@@ -7,6 +7,7 @@ Run:  python3 tests/test_server.py
 import importlib.util
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import unittest
@@ -77,12 +78,17 @@ class URLSafety(unittest.TestCase):
         self.assertFalse(server._ip_is_public("::ffff:169.254.169.254"))
 
     def test_allows_ordinary_public_pages(self):
+        # assert_safe_url wraps a DNS failure in UnsafeURLError, so the old
+        # bare `except Exception` skip could never fire: an offline machine
+        # failed this test instead of skipping it. Check DNS first.
+        try:
+            socket.getaddrinfo("example.com", 443)
+        except OSError:
+            self.skipTest("no DNS in this environment")
         try:
             server.assert_safe_url("https://example.com/size-guide")
         except server.UnsafeURLError as e:
             self.fail("blocked a legitimate page: %s" % e)
-        except Exception:
-            self.skipTest("no DNS in this environment")
 
 
 class PasswordHashing(unittest.TestCase):
