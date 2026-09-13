@@ -521,11 +521,12 @@
     more: renderMore,
     today: renderWearToday,
     style: renderStyle,
+    guide: renderGuide,
     login: renderAuth
   };
 
   // Routes reached via the "More" tab — they light up the More nav item.
-  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard', 'style'];
+  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard', 'style', 'guide'];
 
   function currentRoute() {
     const hash = location.hash.replace(/^#\//, '') || 'home';
@@ -2731,8 +2732,10 @@
   /* `why` is the matched-style line from StyleProfile.reason. Checked as a
      string because recRow is also handed straight to Array#map, which
      passes an index as the second argument. */
-  function recRow(item, why) {
-    const link = item.aff || item.url;
+  function recRow(item, why, ref) {
+    /* Every shop link goes through Affiliate: with nothing configured it
+       returns the plain URL, so this is safe before any network is joined. */
+    const link = Affiliate.link(item.url, { aff: item.aff, ref: typeof ref === 'string' && ref ? ref : 'foryou' });
     const id = favId(item);
     const faved = isFav(id);
     return `
@@ -2900,6 +2903,77 @@
     if (cancel) cancel.onclick = () => { styleDraft = null; go('foryou'); };
   }
 
+  /* ==========================================================
+     WHAT TO BUY — the pieces a style runs on. Data and the why live
+     in buy-guide.js; every shop link goes through Affiliate.
+     ========================================================== */
+  function guideStyle(id) {
+    return id === 'essentials' ? { e: '🧺', label: 'Wardrobe essentials' } : StyleProfile.style(id);
+  }
+
+  /* The wearer's size per garment type, where FitChecker can work it
+     out: the active body profile, or a guest's saved measurements. */
+  function sizesByType() {
+    const out = {};
+    try {
+      let who = getActiveProfile();
+      if (!who) {
+        const body = Store.getGuestBody();
+        who = body ? { body, sex: userSex() } : null;
+      }
+      if (who && who.body) computeSizes(who).forEach(s => { out[s.type] = s.size; });
+    } catch (e) { /* no measurements — the guide still works without sizes */ }
+    return out;
+  }
+
+  function guideSectionHTML(section, sizes, footer) {
+    const st = guideStyle(section.id) || { e: '', label: section.id };
+    return `
+      <div class="card guide-card">
+        <div class="section-label">${st.e} What to buy · ${esc(st.label)}</div>
+        <div class="guide-list">
+          ${section.items.map(it => `
+            <div class="guide-item">
+              <div class="guide-head">
+                <strong>${esc(it.name)}</strong>
+                ${it.type && sizes[it.type] ? `<span class="guide-size">Your size ${esc(sizes[it.type])}</span>` : ''}
+              </div>
+              <p class="muted small">${esc(it.why)}</p>
+              <div class="guide-shops">
+                ${it.links.map(l => `<a class="guide-shop" href="${esc(Affiliate.link(l.url, { ref: 'guide' }))}" target="_blank" rel="sponsored noopener">${esc(l.brand)}${l.secondHand ? ' <span>second-hand</span>' : ''} <span aria-hidden="true">↗</span></a>`).join('')}
+              </div>
+            </div>`).join('')}
+        </div>
+        ${footer || ''}
+      </div>`;
+  }
+
+  function guideTeaserHTML() {
+    const sections = BuyGuide.forProfile(getStyle(), shoppingGender());
+    if (!sections.length) return '';
+    const total = sections.reduce((n, s) => n + s.items.length, 0);
+    const first = { id: sections[0].id, items: sections[0].items.slice(0, 3) };
+    return guideSectionHTML(first, sizesByType(), `<a class="guide-more" href="#/guide">See all ${total} pieces →</a>`);
+  }
+
+  function renderGuide() {
+    const profile = getStyle();
+    const sections = BuyGuide.forProfile(profile, shoppingGender());
+    const sizes = sizesByType();
+    const named = profile.styles.map(id => StyleProfile.style(id).label.toLowerCase());
+    view.innerHTML = `
+      <div class="card">
+        <h2 class="mb-8">What to buy</h2>
+        <p class="muted small">${named.length
+          ? `The pieces a ${esc(named.join(' and '))} wardrobe runs on, with one line on why each earns its place${Object.keys(sizes).length ? ' — and your size where FitChecker knows it' : ''}.`
+          : 'The pieces almost every wardrobe is built on. <a href="#/style">Pick your style</a> and this becomes yours.'}</p>
+        ${profile.done ? `<div class="style-summary"><span>${esc(StyleProfile.summary(profile))}</span><a href="#/style">Edit style</a></div>` : ''}
+        ${Object.keys(sizes).length ? '' : '<p class="muted small mt-8"><a href="#/analyze">Add your measurements</a> and each piece shows the size to buy.</p>'}
+      </div>
+      ${sections.map(s => guideSectionHTML(s, sizes)).join('')}
+      ${Affiliate.disclosure() ? `<p class="disclosure">${esc(Affiliate.disclosure())}</p>` : ''}`;
+  }
+
   function renderForYou() {
     const recs = (typeof RECS !== 'undefined' && Array.isArray(RECS)) ? RECS : [];
     const profile = getStyle();
@@ -2956,6 +3030,8 @@
 
       ${styleCardHTML()}
 
+      ${guideTeaserHTML()}
+
       ${primary.length ? `
       <div class="card">
         <div class="section-label">Because you checked a ${esc(typeLabel.toLowerCase())}</div>
@@ -2981,7 +3057,7 @@
         <p>Add recommendations to js/recs.js and they appear here.</p>
       </div></div>`}
 
-      <p class="disclosure">Some links may earn FitChecker a small commission. It never changes what's recommended.</p>`;
+      ${Affiliate.disclosure() ? `<p class="disclosure">${esc(Affiliate.disclosure())}</p>` : ''}`;
 
     wireFavButtons(view);
   }
@@ -3001,14 +3077,14 @@
           <a class="btn btn-secondary btn-sm" href="#/foryou">Browse picks</a>
         </div>
         <p class="muted small mb-16">Clothing you saved from For You.${linked ? ' <span class="synced">✓ synced to your account</span>' : ' Log in to keep these across devices.'}</p>
-        ${favs.length ? `<div class="row-list">${favs.map(f => recRow(f)).join('')}</div>` : `
+        ${favs.length ? `<div class="row-list">${favs.map(f => recRow(f, '', 'favourites')).join('')}</div>` : `
           <div class="empty">
             <div class="empty-icon">♡</div>
             <p><strong>No favourites yet.</strong></p>
             <p class="muted">Open <a href="#/foryou">For You</a> and tap the ♥ on anything you like — it lands here, saved to your account.</p>
           </div>`}
       </div>
-      ${favs.length ? '<p class="disclosure">Some links may earn FitChecker a small commission. It never changes what\'s recommended.</p>' : ''}`;
+      ${favs.length ? (Affiliate.disclosure() ? '<p class="disclosure">' + esc(Affiliate.disclosure()) + '</p>' : '') : ''}`;
 
     // re-render so the count + list update immediately when unhearted
     wireFavButtons(view, () => renderFavourites());
@@ -4647,8 +4723,8 @@
       </div>
       ${picks.length ? `<div class="row-list mt-16">${picks.map(p => `
         ${p.size ? `<div class="gap-size">In your size — <strong>${esc(p.size)}</strong> · ${esc(p.g.label.toLowerCase())}</div>` : ''}
-        ${recRow(p.rec)}`).join('')}</div>
-        <p class="disclosure">Some links may earn FitChecker a small commission. It never changes what's recommended.</p>` : ''}
+        ${recRow(p.rec, '', 'wardrobe')}`).join('')}</div>
+        ${Affiliate.disclosure() ? `<p class="disclosure">${esc(Affiliate.disclosure())}</p>` : ''}` : ''}
     </div>`;
   }
 
@@ -5044,6 +5120,8 @@
         icon: '<path d="M12 3v7"/><path d="M12 10 5 13.5V20h14v-6.5L12 10Z"/><path d="M12 10c-2 0-3.2-1-3.2-2.4A2.2 2.2 0 0 1 11 5.4"/>' },
       { route: 'style', label: 'My style', sub: getStyle().done ? esc(StyleProfile.summary(getStyle())) : 'Female or male, style niches and budget',
         icon: '<path d="M8 3 4 6l2 3 1.5-1V19h9V8L18 9l2-3-4-3c-.8 1.2-2.2 2-4 2s-3.2-.8-4-2Z"/>' },
+      { route: 'guide', label: 'What to buy', sub: 'The pieces your style runs on, in your size',
+        icon: '<path d="M5 8h14l-1.2 12.5H6.2L5 8Z"/><path d="M8.5 10.5V6a3.5 3.5 0 0 1 7 0v4.5"/>' },
       { route: 'favourites', label: 'Favourites', sub: 'Clothing you saved from For You',
         icon: '<path d="M12 20.3 4.4 12.7a4.6 4.6 0 0 1 6.5-6.5l1.1 1.1 1.1-1.1a4.6 4.6 0 0 1 6.5 6.5L12 20.3Z"/>' },
       { route: 'profiles', label: 'My measurements', sub: 'Body profiles & photos',

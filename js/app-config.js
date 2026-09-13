@@ -103,14 +103,55 @@ window.APP_CONFIG = {
      tag must never produce a broken link.
      ============================================================ */
   affiliate: {
-    sovrnId: '',
+    /* ---- YOUR publisher ids, one per network. See AFFILIATE.md. ---- */
+    sovrnId: '',                // Sovrn Commerce key — the catch-all for every shop below that is not switched on
+    awinAffId: '',              // Awin publisher id
+    adtractionChannelId: '',    // Adtraction channel id (the "as" number in your tracking links)
+    tradedoublerSiteId: '',     // Tradedoubler site id (the "a" number)
     amazonTag: '',
-    awinAffId: '',
     shareasaleUserId: '',
     rakutenId: '',
-    /* Per-merchant overrides, keyed by domain (no www.):
-         'boots.com': { network: 'awin', mid: '1234' }          */
-    merchants: {}
+
+    /* ---- the shops FitChecker links to, by domain (no www.) ----
+       Nothing here earns until BOTH are true:
+         1. your publisher id for that network is filled in above, and
+         2. you have been ACCEPTED into that shop's programme and set on: true.
+       Until then the shop's links go through Sovrn (if set) or stay plain.
+
+       mid / p / a values marked "public" are the shops' own programme ids,
+       read from the networks' public directories on 2026-09-14. Confirm
+       them in your network dashboard after joining — programmes move.
+
+       Networks:  awin → mid      adtraction → a (ad id from your link)
+                  tradedoubler → p     impact → link (your tracking link)  */
+    merchants: {
+      // Awin
+      'uniqlo.com':   { network: 'awin', mid: '21364', on: false },   // public: Uniqlo SE
+      'nike.com':     { network: 'awin', mid: '16339', on: false },   // public: Nike SE
+      'adidas.se':    { network: 'awin', mid: '77020', on: false },   // public: adidas SE
+      'asos.com':     { network: 'awin', mid: '',      on: false },   // on Awin — find ASOS's id after joining
+      'zalando.se':   { network: 'awin', mid: '',      on: false },   // Zalando runs on Awin in most of Europe; confirm for SE
+
+      // Adtraction (the big Nordic network)
+      'junkyard.com': { network: 'adtraction', a: '', on: false },    // Junkyard SE — 8% reported; copy the ad id from your link
+
+      // Tradedoubler
+      'boozt.com':    { network: 'tradedoubler', p: '227648', on: false }, // public: Boozt.com Nordic programme
+
+      // Impact — each brand gives you a whole tracking link
+      'levi.com':     { network: 'impact', link: '', on: false },     // Levi's EU is managed on Impact
+      'carhartt-wip.com': { network: 'impact', link: '', on: false }  // check: Carhartt (US) is on Impact; WIP may differ
+
+      /* Not listed on purpose — Sovrn covers them if it accepts you:
+         H&M, COS, Arket, Weekday, & Other Stories, Monki (H&M Group),
+         Mango, GANT, Lacoste, Ralph Lauren, Arc'teryx, Fjällräven,
+         The North Face, lululemon, Gymshark, Reformation, Free People,
+         AllSaints, Stüssy, Suitsupply, Filippa K, Tommy Hilfiger.
+         Zara has no affiliate programme; Bershka, Pull&Bear and Massimo
+         Dutti (also Inditex) could not be confirmed. Vinted and Beyond
+         Retro are second-hand — kept because they help people, not
+         because they pay. */
+    }
   },
 
   /* ============================================================

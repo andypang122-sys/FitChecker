@@ -40,6 +40,14 @@ echo "── style profile & catalogue ─────────────�
 node tests/test_style_profile.js
 
 echo
+echo "── affiliate links ─────────────────────────"
+node tests/test_affiliate.js
+
+echo
+echo "── what-to-buy guide ───────────────────────"
+node tests/test_buy_guide.js
+
+echo
 echo "── server ──────────────────────────────────"
 "$PY" tests/test_server.py
 
