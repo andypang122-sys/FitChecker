@@ -29,6 +29,10 @@ echo "── measurement staleness ───────────────
 node tests/test_staleness.js
 
 echo
+echo "── daily outfit log ────────────────────────"
+node tests/test_wearlog.js
+
+echo
 echo "── server ──────────────────────────────────"
 python3 tests/test_server.py
 

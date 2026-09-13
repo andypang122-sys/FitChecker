@@ -519,6 +519,7 @@
     settings: renderSettings,
     help: renderHelp,
     more: renderMore,
+    today: renderWearToday,
     login: renderAuth
   };
 
@@ -868,6 +869,216 @@
       </a>`;
   }
 
+  /* ==========================================================
+     TODAY'S OUTFIT — the daily check-in. The why lives in wearlog.js.
+     ========================================================== */
+  const WEAR_MILESTONES = [3, 7, 14, 30, 60, 100, 365];
+
+  function lastWornLabel(date, t) {
+    const d = WearLog.daysBetween(date, t);
+    if (d <= 0) return 'today';
+    if (d === 1) return 'yesterday';
+    if (d < 7) return d + 'd ago';
+    if (d < 60) return Math.round(d / 7) + 'w ago';
+    return Math.round(d / 30) + 'mo ago';
+  }
+
+  /* Wear counts move by exactly the day's difference, so re-saving the
+     same morning, or un-ticking a piece, can never double count. */
+  async function applyWearDiff(added, removed) {
+    const bump = async (id, delta) => {
+      const it = await Wardrobe.getItem(id);
+      if (!it) return;
+      const next = await Wardrobe.updateItem(id, { worn: Math.max(0, (Number(it.worn) || 0) + delta) });
+      if (Cloud.isLinked() && next) Cloud.putItem(next).catch(() => {});
+    };
+    for (const id of added) await bump(id, 1);
+    for (const id of removed) await bump(id, -1);
+  }
+
+  /* A fit complaint on a labelled garment someone actually wears is the
+     best calibration evidence there is — it goes to FitFeedback exactly
+     as a post-purchase report would. */
+  function sendWearFitReports(reports) {
+    if (typeof FitFeedback === 'undefined') return;
+    reports.forEach(r => {
+      try {
+        FitFeedback.record({ garmentType: r.garmentType, evaluatedSize: r.size, brand: r.brand, score: null, fitPref: null }, r.outcome);
+      } catch (e) { /* never let feedback break a save */ }
+    });
+  }
+
+  function paintHomeToday(owner, items) {
+    const slot = document.getElementById('home-today');
+    if (!slot || !slot.isConnected) return;
+    if (!items.length) { slot.innerHTML = ''; return; } // the wardrobe card below already asks for a first piece
+    const t = WearLog.today();
+    const entries = WearLog.log(owner);
+    const e = entries[t];
+    const st = WearLog.streak(entries, t);
+    const ins = WearLog.insights(items, entries, t, money);
+    const worn = e ? (e.items || []).map(id => items.find(i => i.id === id)).filter(Boolean) : [];
+    const feel = e && e.feel ? WearLog.FEELS.find(f => f.v === e.feel) : null;
+    slot.innerHTML = `
+      <div class="card today-card">
+        <div class="card-title today-head">
+          <span>${worn.length ? 'Today’s outfit' : 'What are you wearing today?'}</span>
+          ${st.count ? `<span class="count-chip">🔥 ${st.count}-day streak</span>` : ''}
+        </div>
+        ${worn.length ? `
+          <div class="peek-strip">${worn.map(it => `<span class="peek-item">
+            <span class="peek-art"><img src="${it.img}" alt="" loading="lazy"></span>
+            <span class="peek-cap">${esc(it.name || TYPE_LABEL[it.type] || '')}</span></span>`).join('')}</div>
+          <div class="today-foot">${feel ? `<span class="muted small">${feel.e} ${esc(feel.label)}</span>` : '<span></span>'}
+            <a class="btn btn-ghost btn-sm" href="#/today">Change</a></div>`
+        : `<p class="muted small">Two taps from your closet. Each day you log teaches FitChecker which sizes really fit you — and shows what never leaves the hanger.</p>
+          <a class="btn btn-primary btn-block mt-16" href="#/today">Log today’s outfit</a>`}
+        ${ins.length ? `<p class="today-insight"><span>${ins[0].e}</span><span>${esc(ins[0].text)}${ins[0].link ? ` <a href="#/${ins[0].link}">Open →</a>` : ''}</span></p>` : ''}
+      </div>`;
+  }
+
+  let wearDraft = null;
+
+  function renderWearToday() {
+    const u = Auth.user();
+    if (!u) {
+      view.innerHTML = `
+        <div class="card"><div class="empty">
+          <div class="empty-icon">👕</div>
+          <h3>Log what you wear</h3>
+          <p>Every outfit you log teaches FitChecker which sizes really fit you. It needs a free account and a few pieces in your wardrobe — your photos stay on this device.</p>
+          <button class="btn btn-primary btn-lg" data-promo-login>Log in / Create free account</button>
+        </div></div>`;
+      wirePromo();
+      return;
+    }
+    view.innerHTML = '<div class="card"><div class="wardrobe-loading muted">Opening your wardrobe…</div></div>';
+    Wardrobe.listItems(u.email)
+      .then(items => paintWearToday(u, items))
+      .catch(() => { view.innerHTML = '<div class="card"><p class="muted">Couldn’t open the wardrobe on this device. Your browser may block on-device storage in private mode.</p></div>'; });
+  }
+
+  function paintWearToday(u, items) {
+    const owner = u.email;
+    const t = WearLog.today();
+    const existing = WearLog.entry(owner, t);
+    if (!wearDraft || wearDraft.owner !== owner || wearDraft.date !== t) {
+      wearDraft = {
+        owner, date: t,
+        items: existing ? existing.items.slice() : [],
+        feel: existing ? existing.feel : null,
+        fit: existing ? Object.assign({}, existing.fit) : {}
+      };
+    }
+    if (!items.length) {
+      view.innerHTML = `
+        <div class="card"><div class="empty">
+          <div class="empty-icon">🚪</div>
+          <h3>Your closet is empty</h3>
+          <p>Add a few pieces to your wardrobe, and logging an outfit takes two taps.</p>
+          <a class="btn btn-primary btn-lg" href="#/wardrobe">Open wardrobe</a>
+        </div></div>`;
+      return;
+    }
+    const entries = WearLog.log(owner);
+    const st = WearLog.streak(entries, t);
+    const stats = WearLog.stats(items, entries, t);
+    const last = stats.lastWorn;
+    // Recently worn first: most mornings are a variation on the last few.
+    const ordered = items.slice().sort((a, b) =>
+      String(last[b.id] || '').localeCompare(String(last[a.id] || '')) || (b.createdAt - a.createdAt));
+    const picked = id => wearDraft.items.indexOf(id) > -1;
+    const chosen = ordered.filter(it => picked(it.id));
+    const itemName = it => it.name || TYPE_LABEL[it.type] || 'Item';
+
+    view.innerHTML = `
+      <div class="card">
+        <div class="card-title today-head">
+          <span>What are you wearing today?</span>
+          ${st.count ? `<span class="count-chip">🔥 ${st.count}-day streak${st.restUsedThisWeek ? ' · rest day used' : ''}</span>` : ''}
+        </div>
+        <p class="muted small mb-16">Tap everything you’ve got on. Each piece counts once a day, however many times you save.</p>
+        <div class="ward-grid wear-grid">
+          ${ordered.map(it => `
+            <button class="ward-item wear-pick ${picked(it.id) ? 'on' : ''}" data-wear="${esc(it.id)}" aria-pressed="${picked(it.id)}">
+              <span class="ward-thumb"><img src="${it.img}" alt="" loading="lazy"></span>
+              <span class="ward-cap"><span class="ward-dot" style="background:${esc(it.colorHex)}"></span>${esc(itemName(it))}</span>
+              ${last[it.id] ? `<span class="wear-last">${esc(lastWornLabel(last[it.id], t))}</span>` : ''}
+            </button>`).join('')}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">How did it feel?</div>
+        <div class="chip-row">${WearLog.FEELS.map(f =>
+          `<button class="chip ${wearDraft.feel === f.v ? 'selected' : ''}" data-feel="${f.v}">${f.e} ${esc(f.label)}</button>`).join('')}</div>
+        ${chosen.length ? `
+          <div class="today-label mt-16">Anything fit badly? <span class="muted small">optional</span></div>
+          ${chosen.map(it => `
+            <div class="wear-fit-row">
+              <span class="wear-fit-name">${esc(itemName(it))}${it.size ? ` <span class="muted small">· ${it.brand ? esc(it.brand) + ' ' : ''}${esc(it.size)}</span>` : ''}</span>
+              <div class="chip-row">${WearLog.FIT_ISSUES.map(f =>
+                `<button class="chip chip-sm ${wearDraft.fit[it.id] === f.v ? 'selected' : ''}" data-fit-item="${esc(it.id)}" data-fit="${f.v}">${esc(f.label)}</button>`).join('')}</div>
+            </div>`).join('')}
+          <p class="muted small mt-8">Too tight or too loose on a piece with its size on the label tunes your future size recommendations.</p>` : ''}
+        <button class="btn btn-primary btn-block btn-lg mt-16" id="wear-save">${existing ? 'Update today' : 'Save today'}</button>
+        ${existing ? '<button class="btn btn-ghost btn-block mt-8" id="wear-clear">Clear today</button>' : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-title">Your closet, honestly</div>
+        <div class="stat-row">
+          <div class="stat"><div class="num">${stats.rotation}/${stats.total}</div><div class="lbl">Worn · 30 days</div></div>
+          <div class="stat"><div class="num">${stats.daysLogged30}</div><div class="lbl">Days logged</div></div>
+          <div class="stat"><div class="num">${stats.neglected.length}</div><div class="lbl">Idle 60d+</div></div>
+        </div>
+        ${stats.neglected.length
+          ? `<p class="muted small">${esc(stats.neglected.slice(0, 4).map(itemName).join(', '))}${stats.neglected.length > 4 ? ` +${stats.neglected.length - 4} more` : ''} — <a href="#/resale">wear them or sell them</a>.</p>`
+          : '<p class="muted small">Nothing gathering dust. Nice.</p>'}
+      </div>`;
+
+    view.querySelectorAll('[data-wear]').forEach(b => b.onclick = () => {
+      const id = b.getAttribute('data-wear');
+      const i = wearDraft.items.indexOf(id);
+      if (i > -1) { wearDraft.items.splice(i, 1); delete wearDraft.fit[id]; }
+      else wearDraft.items.push(id);
+      const y = window.scrollY;
+      paintWearToday(u, items);
+      window.scrollTo(0, y);
+    });
+    view.querySelectorAll('[data-feel]').forEach(b => b.onclick = () => {
+      const v = b.getAttribute('data-feel');
+      wearDraft.feel = wearDraft.feel === v ? null : v;
+      view.querySelectorAll('[data-feel]').forEach(x => x.classList.toggle('selected', x.getAttribute('data-feel') === wearDraft.feel));
+    });
+    view.querySelectorAll('[data-fit]').forEach(b => b.onclick = () => {
+      const id = b.getAttribute('data-fit-item');
+      const v = b.getAttribute('data-fit');
+      if (wearDraft.fit[id] === v) delete wearDraft.fit[id]; else wearDraft.fit[id] = v;
+      view.querySelectorAll(`[data-fit-item="${id}"]`).forEach(x => x.classList.toggle('selected', wearDraft.fit[id] === x.getAttribute('data-fit')));
+    });
+    document.getElementById('wear-save').onclick = async () => {
+      if (!wearDraft.items.length) { toast('Tap at least one piece you’re wearing.', 'err'); return; }
+      const res = WearLog.record(owner, wearDraft, t);
+      await applyWearDiff(res.added, res.removed);
+      const reports = WearLog.newFitReports(res.prev, res.entry, items);
+      sendWearFitReports(reports);
+      wearDraft = null;
+      const s = WearLog.streak(WearLog.log(owner), t).count;
+      toast(WEAR_MILESTONES.indexOf(s) > -1 && res.prev == null ? `🔥 ${s}-day streak!`
+        : reports.length ? 'Saved — fit feedback noted ✦' : 'Outfit logged ✦', 'ok');
+      go('home');
+    };
+    const clr = document.getElementById('wear-clear');
+    if (clr) clr.onclick = async () => {
+      const gone = WearLog.remove(owner, t);
+      await applyWearDiff([], gone);
+      wearDraft = null;
+      toast('Cleared today', 'ok');
+      renderWearToday();
+    };
+  }
+
   function renderHome() {
     const u = Auth.user();
 
@@ -952,6 +1163,8 @@
 
       ${homeSizesCard(active)}
 
+      <div id="home-today"></div>
+
       <div id="home-wardrobe"></div>
 
       ${homeFavCard()}
@@ -983,6 +1196,7 @@
     let items = [];
     try { items = await Wardrobe.listItems(owner); } catch (e) { return; }
     if (!slot.isConnected) return;
+    paintHomeToday(owner, items);
 
     if (!items.length) {
       slot.innerHTML = `
@@ -4367,7 +4581,9 @@
       ${costLine}
 
       <div class="btn-row mt-16" style="flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" data-act="worn">Wore it today</button>
+        ${WearLog.wornOn(owner, id)
+          ? '<button class="btn btn-secondary btn-sm" data-act="worn" disabled>Worn today ✓</button>'
+          : '<button class="btn btn-secondary btn-sm" data-act="worn">Wore it today</button>'}
         <button class="btn btn-ghost btn-sm" data-act="sell">Sell this</button>
         <button class="btn btn-danger btn-sm" data-act="del" style="margin-left:auto">Delete</button>
       </div>
@@ -4383,10 +4599,16 @@
       <button class="btn btn-ghost btn-block mt-16" data-act="close">Close</button>`);
 
     overlay.querySelector('[data-act="close"]').onclick = () => overlay.remove();
+    /* This used to bump the counter on every tap, so two taps on one
+       morning counted as two wears and quietly skewed the size ledger.
+       It now goes through today's outfit log, which counts a garment
+       once per day wherever it is logged from. */
     overlay.querySelector('[data-act="worn"]').onclick = async () => {
-      const next = await Wardrobe.updateItem(id, { worn: (it.worn || 0) + 1 });
-      if (Cloud.isLinked() && next) Cloud.putItem(next).catch(() => {});
-      toast('Nice — logged as worn today.', 'ok');
+      const cur = WearLog.entry(owner) || { items: [], feel: null, fit: {} };
+      if (cur.items.indexOf(id) > -1) { toast('Already logged for today.', 'ok'); overlay.remove(); return; }
+      const res = WearLog.record(owner, { items: cur.items.concat(id), feel: cur.feel, fit: cur.fit });
+      await applyWearDiff(res.added, res.removed);
+      toast('Nice — added to today’s outfit.', 'ok');
       overlay.remove();
     };
     overlay.querySelector('[data-act="sell"]').onclick = () => {
@@ -4443,6 +4665,7 @@
     overlay.querySelector('[data-act="del"]').onclick = () => {
       confirmModal('Delete this item?', 'It will be removed from your wardrobe and any saved outfits. This cannot be undone.', 'Delete', async () => {
         await Wardrobe.deleteItem(id);
+        WearLog.forgetItem(owner, id);   // or its old days point at a garment that no longer exists
         if (Cloud.isLinked()) Cloud.deleteItem(id).catch(() => {});
         overlay.remove();
         toast('Removed from your wardrobe.');
