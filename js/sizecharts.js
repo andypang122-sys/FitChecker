@@ -80,11 +80,10 @@ const SizeCharts = (() => {
     const s = SITES[brandId];
     const gLabel = garmentLabel(garmentType);
 
-    /* Our own label — the chart is in the app, so do not send anyone
-       to a website to read something we already know exactly. */
+    /* Our own label — there is no website to send anyone to yet. */
     if (s && s.how === 'own') {
-      return { kind: 'own', label: 'Trissan measurements', url: '',
-        note: 'This is our own pattern, so the numbers in FitCheck are the numbers on the garment. Nothing to look up.' };
+      return { kind: 'own', label: 'Trissan sizing', url: '',
+        note: 'Our own label. The measured chart goes in when the first garments are made — until then this is the standard European chart.' };
     }
 
     if (!s) {

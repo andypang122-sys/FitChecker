@@ -424,6 +424,14 @@ def get_size_chart(url):
         html, final_url = fetch_html(url)
     except UnsafeURLError as e:
         return {"ok": False, "error": str(e)}
+    except urllib.error.HTTPError as e:
+        # 401/403/429/503 is the shop's bot protection turning us away,
+        # not a broken link — say which, so nobody retries in vain.
+        if e.code in (401, 403, 429, 503):
+            return {"ok": False, "error": "That shop blocked the request (HTTP %d)." % e.code}
+        if e.code == 404:
+            return {"ok": False, "error": "That page doesn't exist (HTTP 404) — check the link."}
+        return {"ok": False, "error": "Could not open that page (HTTP %d)." % e.code}
     except Exception as e:
         return {"ok": False, "error": "Could not open that page (%s)." % e.__class__.__name__}
 
@@ -566,6 +574,12 @@ def _gemini_vision(mime, b64):
     if not text:
         raise ValueError("empty response")
     return json.loads(text)
+
+
+def capabilities():
+    """What this server can actually do, so the app never offers a button
+    that can only answer "not switched on". Booleans only — never a key."""
+    return {"ok": True, "vision": bool(GEMINI_API_KEY)}
 
 
 def vision_size_chart(image):
@@ -1533,8 +1547,17 @@ def _clean_profile(p):
     body = body if isinstance(body, dict) else {}
     clean_body = {}
     for k, v in list(body.items())[:20]:
+        if k == "estimate":
+            continue   # validated on its own below
         if isinstance(v, (int, float)) or v is None:
             clean_body[str(k)[:16]] = v
+    # Which numbers were estimated (from a size worn, or a photo) rather
+    # than measured. Dropping it on sync would silently restore full
+    # confidence to guessed measurements on every other device.
+    est = body.get("estimate")
+    if isinstance(est, dict) and est.get("source") in ("size", "scan"):
+        fields = [str(f)[:16] for f in (est.get("fields") or []) if isinstance(f, str)][:12]
+        clean_body["estimate"] = {"source": est["source"], "fields": fields}
     return {
         "id": str(p["id"])[:64],
         "name": str(p.get("name") or "")[:60],
@@ -1821,6 +1844,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if parsed.path == "/api/capabilities":
+            self._json(capabilities())
             return
         if parsed.path == "/api/outfits":
             self._json(outfits_public())

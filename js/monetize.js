@@ -27,6 +27,12 @@
    into CFG.checkout, and your AdSense ids into CFG.adClient.
    Real purchases must be confirmed server-side — the local flag
    alone is trivially faked.
+
+   Until that is true, set `paid: false` in app-config's money
+   block. Everything Pro would unlock is simply open, and no
+   price, trial, meter, lock or ad is ever shown. A paywall with
+   nothing behind it charges honest users in friction and earns
+   nothing from anyone else.
    ============================================================ */
 
 const Money = (() => {
@@ -83,7 +89,18 @@ const Money = (() => {
     if (typeof CFG.legacyPro === 'function') { try { return !!CFG.legacyPro(); } catch (e) { return false; } }
     try { const p = JSON.parse(localStorage.getItem(CFG.app + '_pro')); return !!(p && p.active); } catch (e) { return false; }
   }
+  // false = no paid tier at all: every Pro feature is open, and nothing
+  // that sells (price, trial, meter, lock, ad) is rendered.
+  function paidOn() { return CFG.paid !== false; }
+
+  // Dev-only affordances (the "unlock for testing" preview) must never
+  // reach a real user just because checkout isn't wired yet.
+  function isLocalDev() {
+    try { return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname); } catch (e) { return false; }
+  }
+
   function isPro() {
+    if (!paidOn()) return true;
     const a = acct();
     if (a && a.hasPro()) return true;
     return legacyPro();
@@ -113,6 +130,7 @@ const Money = (() => {
   function config()   { return CFG; }
 
   function creditsBadgeHTML() {
+    if (!paidOn()) return '';
     if (isPro()) {
       if (inTrial()) { const d = trialDaysLeft(); return `<span class="credit-pill pro">✦ Trial — ${d} day${d === 1 ? '' : 's'} left</span>`; }
       return `<span class="credit-pill pro">✦ ${esc(CFG.proName)}</span>`;
@@ -240,6 +258,7 @@ const Money = (() => {
     // Back-compat: old call sites pass a callback.
     const onGranted = typeof optsOrCb === 'function' ? optsOrCb : (optsOrCb && optsOrCb.onGranted);
     const o = (typeof optsOrCb === 'object' && optsOrCb) ? optsOrCb : {};
+    if (!paidOn()) { if (onGranted) onGranted(); return { close() {} }; }
     picked = CFG.defaultPlan;
 
     const root = document.getElementById('modal-root') || document.body;
@@ -343,6 +362,9 @@ const Money = (() => {
       confirmAfterCheckout(plan, onDone);
       return;
     }
+    // No checkout link: a real user gets an honest "not yet", never the
+    // developer's instructions or a free unlock button.
+    if (!isLocalDev()) { toast(CFG.proName + ' isn\'t on sale yet.'); return; }
     const root = document.getElementById('modal-root') || document.body;
     const w = document.createElement('div'); w.className = 'paywall-scrim';
     w.innerHTML = `<div class="paywall"><button class="paywall-x">×</button>
@@ -387,6 +409,7 @@ const Money = (() => {
      Settings card
      ========================================================== */
   function proCardHTML() {
+    if (!paidOn()) return '';
     if (isPro()) {
       const trial = inTrial();
       return `<div class="card pro-card is-pro">
@@ -421,7 +444,7 @@ const Money = (() => {
   function toast(m) { if (window.__toast) return window.__toast(m); }
 
   return {
-    isPro, setPro, remaining, canUse, consume, grantBonus, config,
+    isPro, paidOn, setPro, remaining, canUse, consume, grantBonus, config,
     creditsBadgeHTML, bannerHTML, wireAds, showPaywall, startCheckout,
     proCardHTML, wireProCard, playRewardedAd, toast,
 

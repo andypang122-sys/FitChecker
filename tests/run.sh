@@ -48,6 +48,10 @@ echo "── what-to-buy guide ────────────────�
 node tests/test_buy_guide.js
 
 echo
+echo "── quick start, estimates, paid switch ─────"
+node tests/test_quickstart.js
+
+echo
 echo "── server ──────────────────────────────────"
 "$PY" tests/test_server.py
 

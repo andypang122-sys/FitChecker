@@ -21,9 +21,13 @@
 const I18n = (() => {
   const KEY = 'fitcheck_lang';
 
-  // The 12 curated languages (hand-translated, instant, offline) sit at the
-  // top. Everything below is translated live on first use, then cached on the
-  // device. Codes are Google Translate codes.
+  // Only the curated languages: each has a hand-written dictionary for the
+  // core screens. The ~90 machine-only languages that used to follow were
+  // cut: they leaned entirely on Google's free, unofficial endpoint (which
+  // can rate-limit or vanish) and read like machine translation. Strings a
+  // curated dictionary misses still go through that endpoint. A device
+  // still set to a removed language falls back to English via known().
+  // Codes are Google Translate codes.
   const LANGS = [
     { code: 'en', label: 'English' },
     { code: 'es', label: 'Español' },
@@ -36,56 +40,7 @@ const I18n = (() => {
     { code: 'ru', label: 'Русский' },
     { code: 'ja', label: '日本語' },
     { code: 'it', label: 'Italiano' },
-    { code: 'sv', label: 'Svenska' },
-    { code: 'af', label: 'Afrikaans' }, { code: 'sq', label: 'Albanian' },
-    { code: 'am', label: 'Amharic' }, { code: 'hy', label: 'Armenian' },
-    { code: 'az', label: 'Azerbaijani' }, { code: 'eu', label: 'Basque' },
-    { code: 'be', label: 'Belarusian' }, { code: 'bn', label: 'Bengali' },
-    { code: 'bs', label: 'Bosnian' }, { code: 'bg', label: 'Bulgarian' },
-    { code: 'my', label: 'Burmese' }, { code: 'ca', label: 'Catalan' },
-    { code: 'ceb', label: 'Cebuano' }, { code: 'ny', label: 'Chichewa' },
-    { code: 'zh-TW', label: 'Chinese (Traditional)' }, { code: 'co', label: 'Corsican' },
-    { code: 'hr', label: 'Croatian' }, { code: 'cs', label: 'Czech' },
-    { code: 'da', label: 'Danish' }, { code: 'nl', label: 'Dutch' },
-    { code: 'eo', label: 'Esperanto' }, { code: 'et', label: 'Estonian' },
-    { code: 'tl', label: 'Filipino' }, { code: 'fi', label: 'Finnish' },
-    { code: 'fy', label: 'Frisian' }, { code: 'gl', label: 'Galician' },
-    { code: 'ka', label: 'Georgian' }, { code: 'el', label: 'Greek' },
-    { code: 'gu', label: 'Gujarati' }, { code: 'ht', label: 'Haitian Creole' },
-    { code: 'ha', label: 'Hausa' }, { code: 'haw', label: 'Hawaiian' },
-    { code: 'iw', label: 'Hebrew' }, { code: 'hmn', label: 'Hmong' },
-    { code: 'hu', label: 'Hungarian' }, { code: 'is', label: 'Icelandic' },
-    { code: 'ig', label: 'Igbo' }, { code: 'id', label: 'Indonesian' },
-    { code: 'ga', label: 'Irish' }, { code: 'jw', label: 'Javanese' },
-    { code: 'kn', label: 'Kannada' }, { code: 'kk', label: 'Kazakh' },
-    { code: 'km', label: 'Khmer' }, { code: 'rw', label: 'Kinyarwanda' },
-    { code: 'ko', label: '한국어 (Korean)' }, { code: 'ku', label: 'Kurdish' },
-    { code: 'ky', label: 'Kyrgyz' }, { code: 'lo', label: 'Lao' },
-    { code: 'la', label: 'Latin' }, { code: 'lv', label: 'Latvian' },
-    { code: 'lt', label: 'Lithuanian' }, { code: 'lb', label: 'Luxembourgish' },
-    { code: 'mk', label: 'Macedonian' }, { code: 'mg', label: 'Malagasy' },
-    { code: 'ms', label: 'Malay' }, { code: 'ml', label: 'Malayalam' },
-    { code: 'mt', label: 'Maltese' }, { code: 'mi', label: 'Maori' },
-    { code: 'mr', label: 'Marathi' }, { code: 'mn', label: 'Mongolian' },
-    { code: 'ne', label: 'Nepali' }, { code: 'no', label: 'Norwegian' },
-    { code: 'or', label: 'Odia (Oriya)' }, { code: 'ps', label: 'Pashto' },
-    { code: 'fa', label: 'فارسی (Persian)' }, { code: 'pl', label: 'Polish' },
-    { code: 'pa', label: 'Punjabi' }, { code: 'ro', label: 'Romanian' },
-    { code: 'sm', label: 'Samoan' }, { code: 'gd', label: 'Scots Gaelic' },
-    { code: 'sr', label: 'Serbian' }, { code: 'st', label: 'Sesotho' },
-    { code: 'sn', label: 'Shona' }, { code: 'sd', label: 'Sindhi' },
-    { code: 'si', label: 'Sinhala' }, { code: 'sk', label: 'Slovak' },
-    { code: 'sl', label: 'Slovenian' }, { code: 'so', label: 'Somali' },
-    { code: 'su', label: 'Sundanese' }, { code: 'sw', label: 'Swahili' },
-    { code: 'tg', label: 'Tajik' }, { code: 'ta', label: 'Tamil' },
-    { code: 'tt', label: 'Tatar' }, { code: 'te', label: 'Telugu' },
-    { code: 'th', label: 'Thai' }, { code: 'tr', label: 'Turkish' },
-    { code: 'tk', label: 'Turkmen' }, { code: 'uk', label: 'Ukrainian' },
-    { code: 'ur', label: 'اردو (Urdu)' }, { code: 'ug', label: 'Uyghur' },
-    { code: 'uz', label: 'Uzbek' }, { code: 'vi', label: 'Tiếng Việt' },
-    { code: 'cy', label: 'Welsh' }, { code: 'xh', label: 'Xhosa' },
-    { code: 'yi', label: 'Yiddish' }, { code: 'yo', label: 'Yoruba' },
-    { code: 'zu', label: 'Zulu' }
+    { code: 'sv', label: 'Svenska' }
   ];
 
   // curated codes have a full offline dictionary (defined below)

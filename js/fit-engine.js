@@ -559,6 +559,13 @@ const FitEngine = (() => {
     const stalePenalty = Math.max(0, Math.min(40, Number(opts && opts.confidencePenalty) || 0));
     if (stalePenalty) confidence = Math.max(5, confidence - stalePenalty);
 
+    /* Numbers that were never measured — estimated from a size the
+       wearer already buys, or read off a photo. Kept apart from the age
+       penalty so the result can say which of the two is costing points:
+       "re-measure" and "measure with a tape" are different advice. */
+    const estimatePenalty = Math.max(0, Math.min(40, Number(opts && opts.estimatePenalty) || 0));
+    if (estimatePenalty) confidence = Math.max(5, confidence - estimatePenalty);
+
     // Headline verdict for the evaluated size — in the house tailor's voice.
     const problems = Object.entries(evaluated.zones)
       .filter(([, z]) => z.status !== 'good' && z.status !== 'info')
@@ -624,7 +631,8 @@ const FitEngine = (() => {
       labels: sizeLabels(garmentType, evaluated.size, sex, body),
       bestLabels: sizeLabels(garmentType, best.size, sex, body),
       easeBias: easeBias || 0,
-      stalePenalty: stalePenalty
+      stalePenalty: stalePenalty,
+      estimatePenalty: estimatePenalty
     };
   }
 

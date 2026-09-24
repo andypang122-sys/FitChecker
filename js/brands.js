@@ -54,12 +54,16 @@ const Brands = (() => {
       bias: {}
     },
 
-    /* ---- first-party: we own the pattern, so this is exact ---- */
+    /* ---- our own label ----
+       Print-on-demand and not launched yet, so there is no measured
+       garment behind it: it uses the standard chart and says so.
+       Once the first blanks are measured, add a `sizes` block and set
+       confidence to 'first-party' — that is the only thing that earns it. */
     {
       id: 'trissan', name: 'Trissan', region: 'SE',
-      confidence: 'first-party', popular: true,
-      note: 'Our own label. Cut true to the European standard with a slightly longer body.',
-      bias: { default: {}, lengths: { torsoLength: 2 } }
+      confidence: 'modelled', popular: true,
+      note: 'Our own label, launching soon. Until the first garments are measured this uses the standard European chart.',
+      bias: {}
     },
 
     /* ---- Japanese / Asian sizing: consistently smaller labels ---- */
@@ -346,17 +350,21 @@ const Brands = (() => {
        advice that gets someone the wrong parcel. Half a step off is
        already worth telling people about. */
     const steps = chest / 6.5;
+    /* "Most people size up" would be a claim about data we don't have.
+       The advice says what to do; `estimate` says how sure we are. */
     let verdict, advice;
-    if (steps <= -1.4)     { verdict = 'runs much smaller'; advice = 'Most people size up twice here.'; }
-    else if (steps <= -0.5){ verdict = 'runs small';        advice = 'Most people size up here.'; }
-    else if (steps < 0.5)  { verdict = 'true to size';      advice = 'Sizing here matches the standard.'; }
-    else if (steps < 1.4)  { verdict = 'runs large';        advice = 'Most people size down here.'; }
-    else                   { verdict = 'runs much larger';  advice = 'Most people size down twice here.'; }
+    if (steps <= -1.4)     { verdict = 'runs much smaller'; advice = 'Going up two sizes is usually the safer call.'; }
+    else if (steps <= -0.5){ verdict = 'runs small';        advice = 'Going up a size is usually the safer call.'; }
+    else if (steps < 0.5)  { verdict = 'true to size';      advice = 'Your usual size should hold here.'; }
+    else if (steps < 1.4)  { verdict = 'runs large';        advice = 'Going down a size is usually the safer call.'; }
+    else                   { verdict = 'runs much larger';  advice = 'Going down two sizes is usually the safer call.'; }
 
     return {
       brand: brand.id, brandName: brand.name, verdict, advice,
       steps: Math.round(steps * 10) / 10,
-      confidence: brand.confidence, volatile: !!brand.volatile, note: brand.note
+      confidence: brand.confidence, volatile: !!brand.volatile, note: brand.note,
+      // Only a transcribed chart or our own measured pattern is a fact.
+      estimate: brand.confidence !== 'published' && brand.confidence !== 'first-party'
     };
   }
 
@@ -373,13 +381,18 @@ const Brands = (() => {
      Advice that argues with the recommendation next to it destroys
      confidence in both. Deriving it means they cannot diverge.
      ========================================================== */
-  function compare(garmentType, body, fitPref, sex, brandId) {
+  /* `opts` is handed straight to FitEngine.analyze (easeBias, and the
+     age / estimate confidence penalties). Without it the headline was
+     computed without the wearer's own "did it fit?" calibration, so it
+     could argue with the size recommended beside it, and the confidence
+     shown for a brand quietly ignored stale or estimated measurements. */
+  function compare(garmentType, body, fitPref, sex, brandId, opts) {
     if (typeof FitEngine === 'undefined') return null;
     const order = FitEngine.SIZE_ORDER;
 
-    const std = FitEngine.analyze(garmentType, body, fitPref, null, chartFor('generic', garmentType, sex), sex);
+    const std = FitEngine.analyze(garmentType, body, fitPref, null, chartFor('generic', garmentType, sex), sex, opts);
     const brandChart = chartFor(brandId, garmentType, sex);
-    const bra = FitEngine.analyze(garmentType, body, fitPref, null, brandChart, sex);
+    const bra = FitEngine.analyze(garmentType, body, fitPref, null, brandChart, sex, opts);
     if (!std || !bra) return null;
 
     const iStd = order.indexOf(std.bestSize);
@@ -392,12 +405,13 @@ const Brands = (() => {
     const a = s => 'an ' + s;
     let line;
     if (brandId === 'generic') line = `Your size is ${bra.bestSize}.`;
-    else if (shift === 0) line = `You're usually ${a(std.bestSize)} — and at ${brand.name} that's still ${bra.bestSize}.`;
+    else if (shift === 0) line = `On a standard chart you're ${a(std.bestSize)} — and at ${brand.name} that's still ${bra.bestSize}.`;
     else {
       const dir = shift > 0 ? 'up' : 'down';
       const n = Math.abs(shift) === 1 ? 'a size' : Math.abs(shift) + ' sizes';
-      line = `You're usually ${a(std.bestSize)} — at ${brand.name} size ${dir} to ${bra.bestSize}.`;
-      line += ` They run ${shift > 0 ? 'small' : 'large'} by about ${n}.`;
+      line = `On a standard chart you're ${a(std.bestSize)} — at ${brand.name} size ${dir} to ${bra.bestSize}.`;
+      const known = brand.confidence === 'published' || brand.confidence === 'first-party';
+      line += ` ${known ? 'They' : 'By our estimate they'} run ${shift > 0 ? 'small' : 'large'} by about ${n}.`;
     }
 
     return {

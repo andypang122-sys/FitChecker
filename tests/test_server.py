@@ -278,5 +278,45 @@ class FitFeedback(unittest.TestCase):
             self.assertNotIn(leak, blob, "aggregate store leaked %r" % leak)
 
 
+class Capabilities(unittest.TestCase):
+    """The app hides the screenshot reader when the server can't run it."""
+
+    def test_reports_vision_off_without_a_key(self):
+        saved = server.GEMINI_API_KEY
+        try:
+            server.GEMINI_API_KEY = ""
+            self.assertEqual(server.capabilities(), {"ok": True, "vision": False})
+            server.GEMINI_API_KEY = "secret-key-value"
+            caps = server.capabilities()
+            self.assertIs(caps["vision"], True)
+            self.assertNotIn("secret-key-value", repr(caps), "never leak the key")
+        finally:
+            server.GEMINI_API_KEY = saved
+
+
+class ProfileEstimates(unittest.TestCase):
+    """Estimated measurements must stay marked as estimates through sync,
+    or every other device quietly treats a guess as a tape measurement."""
+
+    def _clean(self, body):
+        return server._clean_profile({"id": "p1", "name": "Me", "sex": "male", "body": body})["body"]
+
+    def test_estimate_survives_sync(self):
+        body = self._clean({"chest": 96, "waist": 80, "hips": 100,
+                            "estimate": {"source": "size", "fields": ["chest", "waist", "hips"]}})
+        self.assertEqual(body["chest"], 96)
+        self.assertEqual(body["estimate"], {"source": "size", "fields": ["chest", "waist", "hips"]})
+
+    def test_malformed_estimates_are_dropped(self):
+        for est in ("size", {"source": "vibes"}, {"source": ["size"]}, None, 7):
+            body = self._clean({"chest": 96, "estimate": est})
+            self.assertNotIn("estimate", body, repr(est))
+
+    def test_estimate_fields_are_bounded(self):
+        body = self._clean({"estimate": {"source": "scan", "fields": ["x" * 99] * 50 + [3]}})
+        self.assertLessEqual(len(body["estimate"]["fields"]), 12)
+        self.assertTrue(all(len(f) <= 16 for f in body["estimate"]["fields"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

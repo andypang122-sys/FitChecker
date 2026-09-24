@@ -4,6 +4,14 @@ This is your end-to-end checklist to get FitChecker onto both stores. The code i
 ready; what remains is mostly **accounts, hosting, and store paperwork** — the
 parts only you can do. Work top to bottom.
 
+> **Current build (2026-09-24):** no paid tier and no ads (`money.paid: false` in
+> `js/app-config.js`). Nothing is sold and no ad SDK ever loads, so answer the
+> store questionnaires without the ad-identifier row in Part E.2. The Outfits
+> community, Progress and Colours are hidden (`features` in the same file), but
+> the outfit endpoints still exist. If you re-enable community, the UGC answers in
+> Parts E and F apply again. Before turning `paid` back on, confirm purchases
+> server-side: the "I've upgraded — unlock" button just takes the user's word for it.
+>
 > Honest timeline: a first-time dual-store launch is realistically **2–4 weeks**,
 > not one week — driven by account approvals and Google's new-account test rule
 > (see Part F). The web-install path (Part G) can be live in a **day**.

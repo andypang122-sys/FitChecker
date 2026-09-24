@@ -525,8 +525,26 @@
     login: renderAuth
   };
 
+  let serverCaps = { vision: false };
+  try {
+    fetch('api/capabilities').then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.ok) serverCaps = { vision: !!d.vision }; })
+      .catch(() => {});
+  } catch (e) {}
+
   // Routes reached via the "More" tab — they light up the More nav item.
-  const MORE_ROUTES = ['more', 'profiles', 'passport', 'resale', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard', 'style', 'guide'];
+  // (Second-hand has its own tab, so 'resale' is deliberately not here.)
+  const MORE_ROUTES = ['more', 'profiles', 'passport', 'history', 'progress', 'wardrobe', 'favourites', 'colours', 'settings', 'help', 'dashboard', 'style', 'guide'];
+
+  // Screens switched off in app-config's `features` stay reachable by URL
+  // but are never linked. Anything not listed there is on.
+  function feature(name) {
+    const f = (window.APP_CONFIG && APP_CONFIG.features) || {};
+    return f[name] !== false;
+  }
+
+  // "✦ Pro" tags only mean something while there is a paid tier.
+  function proTag() { return Money.paidOn() ? ' · ✦ Pro' : ''; }
 
   function currentRoute() {
     const hash = location.hash.replace(/^#\//, '') || 'home';
@@ -771,8 +789,8 @@
     { route: 'passport',   label: 'Size Passport', cls: 'g-shirt',  icon: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M13 9h5M13 12.5h5M6 15.5h8"/>' },
     { route: 'resale',     label: 'Second-hand',   cls: 'g-swoon',  icon: '<path d="M4 8h12l-2.5-2.5"/><path d="M20 16H8l2.5 2.5"/><circle cx="17" cy="8" r="2.4"/><circle cx="7" cy="16" r="2.4"/>' },
     { route: 'favourites', label: 'Favourites',    cls: 'g-dress',  icon: '<path d="M12 20.3 4.4 12.7a4.6 4.6 0 0 1 6.5-6.5l1.1 1.1 1.1-1.1a4.6 4.6 0 0 1 6.5 6.5L12 20.3Z"/>' },
-    { route: 'outfits',    label: 'Outfit Battle', cls: 'g-hoodie', icon: '<path d="M12 7a2 2 0 1 1 2-2"/><path d="M12 7v2"/><path d="m12 9 8.2 6.1a1.6 1.6 0 0 1-1 2.9H4.8a1.6 1.6 0 0 1-1-2.9L12 9Z"/>' },
-    { route: 'progress',   label: 'Progress',      cls: 'g-jeans',  icon: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3.5-4 3 2.5L20 7"/>' }
+    { route: 'outfits',    label: 'Outfit Battle', cls: 'g-hoodie', feature: 'community', icon: '<path d="M12 7a2 2 0 1 1 2-2"/><path d="M12 7v2"/><path d="m12 9 8.2 6.1a1.6 1.6 0 0 1-1 2.9H4.8a1.6 1.6 0 0 1-1-2.9L12 9Z"/>' },
+    { route: 'progress',   label: 'Progress',      cls: 'g-jeans',  feature: 'progress', icon: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3.5-4 3 2.5L20 7"/>' }
   ];
 
   function quickActionsCard() {
@@ -780,7 +798,7 @@
       <div class="card">
         <div class="card-title">Jump in</div>
         <div class="qa-grid">
-          ${QUICK_ACTIONS.map(a => `
+          ${QUICK_ACTIONS.filter(a => !a.feature || feature(a.feature)).map(a => `
             <a class="qa-tile" href="#/${a.route}">
               <span class="qa-ico ${a.cls}"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${a.icon}</svg></span>
               <span class="qa-label">${a.label}</span>
@@ -1148,7 +1166,7 @@
           <div class="steps-3">
             <div class="step-3">
               <span class="s3-art g-tshirt">${garmentSvg('tshirt')}</span>
-              <div><div class="s3-name">1 · Your measurements</div><div class="s3-msg">A soft tape — or let the AI read them from two photos.</div></div>
+              <div><div class="s3-name">1 · Your measurements</div><div class="s3-msg">A soft tape, a size you already wear, or a photo estimate.</div></div>
             </div>
             <div class="step-3">
               <span class="s3-art g-jacket">${garmentSvg('jacket')}</span>
@@ -1164,13 +1182,13 @@
         <div class="card">
           <div class="card-title">What else is inside</div>
           <div class="qa-grid">
-            ${QUICK_ACTIONS.filter(a => a.route !== 'analyze').map(a => `
+            ${QUICK_ACTIONS.filter(a => a.route !== 'analyze' && (!a.feature || feature(a.feature))).map(a => `
               <a class="qa-tile" href="#/${a.route}">
                 <span class="qa-ico ${a.cls}"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${a.icon}</svg></span>
                 <span class="qa-label">${a.label}</span>
               </a>`).join('')}
           </div>
-          <p class="muted small mt-16">Your digital wardrobe, your size in every category, the clothes you've saved, the daily outfit battle, and your body over time.</p>
+          <p class="muted small mt-16">Your digital wardrobe, your size in every category, second-hand checks and the clothes you've saved.</p>
         </div>
 
         ${sisterAppsCard()}
@@ -1367,11 +1385,13 @@
       const isWeight = f.key === 'weight';
       const unit = isWeight ? (f.unit || 'kg') : uLabel;
       const val = isWeight ? (body[f.key] != null ? body[f.key] : '') : disp(body[f.key]);
+      const est = body.estimate && (body.estimate.fields || []).includes(f.key)
+        ? ` data-est="${esc(body.estimate.source)}" data-est-val="${val}"` : '';
       return `
       <div class="field">
         <label for="${idPrefix}-${f.key}">${esc(f.label)} ${f.required ? '<span class="req">*</span>' : ''}</label>
         <span class="input-suffix">
-          <input class="input" id="${idPrefix}-${f.key}" type="number" step="0.1" inputmode="decimal" value="${val}">
+          <input class="input" id="${idPrefix}-${f.key}" type="number" step="0.1" inputmode="decimal" value="${val}"${est}>
           <span class="suffix">${unit}</span>
         </span>
         <span class="hint">${esc(f.hint)}</span>
@@ -1397,6 +1417,14 @@
         return null;
       }
       body[f.key] = val;
+    }
+    // Girths still holding exactly what an estimator wrote are estimates.
+    const estKeys = GIRTH_KEYS.filter(k => {
+      const el = document.getElementById(idPrefix + '-' + k);
+      return el && el.dataset.est && el.value !== '' && el.value === el.dataset.estVal;
+    });
+    if (estKeys.length) {
+      body.estimate = { source: document.getElementById(idPrefix + '-' + estKeys[0]).dataset.est, fields: estKeys };
     }
     return body;
   }
@@ -1453,7 +1481,15 @@
     });
   }
 
-  /* ---------- AI body scan — camera fills the measurement fields ---------- */
+  /* ---------- No tape measure? Two ways to fill the fields ----------
+     A size the wearer already buys (QuickStart) or a photo estimate
+     (BodyScan). Both only ever FILL the fields, so every number stays
+     visible and correctable, and both mark what they filled as an
+     estimate. That mark costs confidence on the verdict and survives
+     saving, until someone types a different number over it. */
+
+  // Only these drive the size, so only these make a body "estimated".
+  const GIRTH_KEYS = ['chest', 'waist', 'hips'];
 
   function scanCta() {
     return `
@@ -1462,34 +1498,146 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="9" r="2.6"/><path d="M7.5 17c.6-2.3 2.4-3.5 4.5-3.5s3.9 1.2 4.5 3.5"/></svg>
         </span>
         <div class="scan-cta-text">
-          <div class="scan-cta-title">AI body scan</div>
-          <div class="scan-cta-sub">No tape measure? A front + side photo and the AI fills these in.</div>
+          <div class="scan-cta-title">No tape measure?</div>
+          <div class="scan-cta-sub">Start from a size you already wear, or estimate from two photos. Both are a starting point — fine-tune any number after.</div>
+          <div class="scan-cta-btns">
+            <button type="button" class="btn btn-primary btn-sm" data-quick>A size I wear</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-scan>Photo estimate</button>
+          </div>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" data-scan>Scan me</button>
       </div>`;
   }
 
-  function wireScan(idPrefix) {
+  // Remember what an estimator wrote, so collectMeasurements can tell an
+  // untouched estimate from a number the person typed over it.
+  function markEstimate(el, source) {
+    if (!el) return;
+    el.dataset.est = source;
+    el.dataset.estVal = el.value;
+  }
+
+  function estimateOf(body) {
+    const e = body && body.estimate;
+    if (!e || typeof QuickStart === 'undefined') return { penalty: 0, notice: '' };
+    return {
+      penalty: QuickStart.PENALTY[e.source] || 0,
+      notice: e.source === 'size'
+        ? 'Chest, waist and hips are estimated from a size you wear, not measured. Two minutes with a tape makes this sharper.'
+        : 'Some measurements are a photo estimate and can be a few cm out. Two minutes with a tape makes this sharper.'
+    };
+  }
+
+  /* sexRowId: the form's Female/Male chip row, if it has one.
+     knownSex: when the profile already has a sex and no row is shown. */
+  function wireScan(idPrefix, sexRowId, knownSex) {
+    const currentSex = () => {
+      if (knownSex) return knownSex;
+      const c = sexRowId && view.querySelector('#' + sexRowId + ' .chip.selected[data-sex]');
+      return c ? c.getAttribute('data-sex') : null;
+    };
+    const field = key => document.getElementById(idPrefix + '-' + key);
+
+    const quick = view.querySelector('[data-quick]');
+    if (quick) quick.onclick = () => openQuickStart(field, currentSex(), knownSex, sex => {
+      const chip = sexRowId && view.querySelector('#' + sexRowId + ' [data-sex="' + sex + '"]');
+      if (chip && !chip.classList.contains('selected')) chip.click();
+    });
+
     const btn = view.querySelector('[data-scan]');
     if (!btn) return;
     btn.onclick = () => {
-      const hEl = document.getElementById(idPrefix + '-height');
+      const hEl = field('height');
       BodyScan.start({
         heightCm: toCm(hEl ? hEl.value : ''),
         unit: units(),
         allowCamera: !!Auth.user(),
         onDone: res => {
           const set = (key, cm) => {
-            const el = document.getElementById(idPrefix + '-' + key);
-            if (el && cm != null) el.value = disp(cm);
+            const el = field(key);
+            if (el && cm != null) { el.value = disp(cm); if (key !== 'height') markEstimate(el, 'scan'); }
           };
           set('height', res.heightCm);
           ['chest', 'waist', 'hips', 'shoulders', 'armLength', 'inseam', 'thigh'].forEach(k => set(k, res.values[k]));
           const u = Auth.user();
           Store.recordScan(u ? u.email : 'guest', res.heightCm, res.values);
-          toast('Measurements filled in from your scan — adjust anything that looks off.', 'ok');
+          toast('Filled in from your photos. These are estimates — adjust anything you know.', 'ok');
         }
       });
+    };
+  }
+
+  function openQuickStart(field, preSex, knownSex, onSex) {
+    const hEl = field('height');
+    const hField = FitEngine.BODY_FIELDS.find(f => f.key === 'height');
+    let sex = preSex;
+    let size = '';
+    const brands = Brands.list();
+    const overlay = openModal(`
+      <h3 class="card-title">Start from a size you wear</h3>
+      <p class="muted small mb-16">Pick a shop you buy tops and trousers from and the size you usually take there. We fill in the body that size is cut for. It's an estimate, so tweak any number you know.</p>
+      ${knownSex ? '' : `
+      <div class="section-label">Women's or men's sizes?</div>
+      <div class="chip-row mb-16" id="qs-sex">
+        <button class="chip ${sex === 'female' ? 'selected' : ''}" data-sex="female">Female</button>
+        <button class="chip ${sex === 'male' ? 'selected' : ''}" data-sex="male">Male</button>
+      </div>`}
+      <div class="field">
+        <label for="qs-brand">Shop or brand</label>
+        <select class="input" id="qs-brand">
+          ${brands.map(b => `<option value="${esc(b.id)}">${esc(b.id === 'generic' ? 'Other / not listed' : b.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="section-label">Your usual size there</div>
+      <div class="chip-row mb-16" id="qs-size">
+        ${QuickStart.SIZES.map(s => `<button class="chip" data-size="${s}">${s}</button>`).join('')}
+      </div>
+      <div class="field">
+        <label for="qs-height">Height</label>
+        <span class="input-suffix">
+          <input class="input" id="qs-height" type="number" step="0.1" inputmode="decimal" value="${esc(hEl ? hEl.value : '')}">
+          <span class="suffix">${units()}</span>
+        </span>
+      </div>
+      <div class="btn-row" style="flex-direction:column">
+        <button class="btn btn-primary btn-block" data-act="ok">Fill in my measurements</button>
+        <button class="btn btn-ghost btn-block" data-act="cancel">Cancel</button>
+      </div>`);
+
+    const pick = (rowSel, attr, onPick) => {
+      const row = overlay.querySelector(rowSel);
+      if (!row) return;
+      row.onclick = e => {
+        const c = e.target.closest('[' + attr + ']');
+        if (!c) return;
+        row.querySelectorAll('.chip').forEach(ch => ch.classList.toggle('selected', ch === c));
+        onPick(c.getAttribute(attr));
+      };
+    };
+    pick('#qs-sex', 'data-sex', v => { sex = v; });
+    pick('#qs-size', 'data-size', v => { size = v; });
+
+    overlay.querySelector('[data-act="cancel"]').onclick = () => overlay.remove();
+    overlay.querySelector('[data-act="ok"]').onclick = () => {
+      if (!sex) { toast('Pick women\'s or men\'s sizes.', 'err'); return; }
+      if (!size) { toast('Pick the size you usually take.', 'err'); return; }
+      const heightCm = toCm(overlay.querySelector('#qs-height').value);
+      if (heightCm == null || heightCm < hField.min || heightCm > hField.max) {
+        toast(`Height is needed for lengths — expected ${disp(hField.min)}–${disp(hField.max)} ${units()}.`, 'err');
+        return;
+      }
+      const brandId = overlay.querySelector('#qs-brand').value;
+      const est = QuickStart.estimate({ sex, size, brandId, heightCm });
+      if (!est) { toast('Could not estimate from that size.', 'err'); return; }
+
+      if (hEl) hEl.value = disp(heightCm);
+      GIRTH_KEYS.forEach(k => {
+        const el = field(k);
+        if (el) { el.value = disp(est[k]); markEstimate(el, 'size'); }
+      });
+      if (!knownSex) onSex(sex);
+      overlay.remove();
+      const b = Brands.get(brandId);
+      toast(`Filled in from an ${size}${b.id === 'generic' ? '' : ' at ' + b.name}. Adjust anything you know.`, 'ok');
     };
   }
 
@@ -1571,7 +1719,7 @@
       });
     }
     wireSlots();
-    wireScan('pf');
+    wireScan('pf', 'pf-sex');
 
     let sexVal = p.sex || null;
     document.getElementById('pf-sex').onclick = e => {
@@ -1738,7 +1886,7 @@
 
     const sel = document.getElementById('who-select');
     if (sel) sel.onchange = () => { wiz.profileId = sel.value; renderWizWho(); };
-    wireScan('gm');
+    wireScan('gm', 'gm-sex', prof ? prof.sex : null);
 
     const sexRow = document.getElementById('gm-sex');
     if (sexRow) sexRow.onclick = e => {
@@ -1803,7 +1951,7 @@
         </div>
       </div>`;
 
-    wireScan('gm');
+    wireScan('gm', 'gs-sex');
 
     document.getElementById('gs-sex').onclick = e => {
       const c = e.target.closest('[data-sex]');
@@ -1879,7 +2027,7 @@
           const d = Brands.drift(wiz.brandId, wiz.garmentType);
           return `<div class="reco-banner mb-16" style="background:var(--surface);border:1px solid var(--border)">
             <p class="small" style="margin:0 0 3px"><strong>${esc(d.brandName)} ${esc(d.verdict)}.</strong> ${esc(d.advice)}</p>
-            <p class="small muted" style="margin:0">${esc(d.note || '')}</p>
+            <p class="small muted" style="margin:0">${esc(d.note || '')}${d.estimate ? ' <em>Our estimate from how this brand is known to fit — paste their size guide below for their real numbers.</em>' : ''}</p>
           </div>`;
         })() : ''}
 
@@ -1889,17 +2037,18 @@
           <span style="flex:1;min-width:200px">✓ Using <strong>${esc(wiz.customChart.brand)}</strong>'s own size guide — sizes ${esc(wiz.customChart.sizeOrder.join(', '))}</span>
           <button class="btn btn-ghost btn-sm" id="chart-remove">Remove</button>
         </div>` : `
-        <p class="hint mb-8">Paste a link to the product or the brand's size-guide page. FitChecker reads their chart and judges the fit by the brand's own numbers.</p>
+        <p class="hint mb-8">Paste a link to the product or the brand's size-guide page and FitChecker reads their chart. Many big shops block this — if yours does, you can type the chart in instead.</p>
         <div class="btn-row mb-8">
           <input class="input" id="wz-url" type="url" inputmode="url" placeholder="https://brand.com/size-guide" value="${esc(wiz.chartUrl)}" style="flex:1;min-width:200px">
           <button class="btn btn-secondary" id="chart-fetch">Fetch guide</button>
         </div>
         <p class="hint mb-8" id="chart-msg"></p>
         <div class="reco-banner mb-16" id="chart-fallback" style="display:none;background:var(--surface);border:1px solid var(--border)">
-          <p class="small" style="margin:0 0 4px"><strong>That shop blocks automatic reading.</strong> Many do (Shein, ASOS, Zara…).</p>
-          <p class="small muted" style="margin:0 0 10px">Open the brand's <strong>size guide</strong> and screenshot it — FitChecker reads the numbers off the picture for you. Works for any brand.</p>
+          <p class="small" style="margin:0 0 4px"><strong>That shop blocks automatic reading.</strong> Most big ones do (H&amp;M, Zara, Zalando, ASOS…).</p>
+          <p class="small muted" style="margin:0 0 10px" data-fb="scan">Open the brand's <strong>size guide</strong> and screenshot it — FitChecker reads the numbers off the picture for you. Works for any brand.</p>
+          <p class="small muted" style="margin:0 0 10px" data-fb="type">Open the brand's <strong>size guide</strong> in another tab and type in the rows for the sizes you're choosing between. It takes a minute and works for any brand.</p>
           <div class="btn-row">
-            <button class="btn btn-primary btn-sm" id="chart-scan" type="button">Scan a screenshot</button>
+            <button class="btn btn-primary btn-sm" id="chart-scan" type="button" data-fb="scan">Scan a screenshot</button>
             <button class="btn btn-ghost btn-sm" id="chart-manual" type="button">Type it in instead</button>
           </div>
           <p class="hint" id="chart-scan-msg" style="margin:8px 0 0"></p>
@@ -1998,7 +2147,20 @@
       const fallback = document.getElementById('chart-fallback');
       // block, not the class's default flex — so the copy stacks above a
       // full-width button instead of squashing into a row
-      const showFallback = () => { if (fallback) fallback.style.display = 'block'; };
+      const showFallback = () => {
+        if (!fallback) return;
+        // Only offer the screenshot reader when this server has one;
+        // otherwise typing the chart in is the whole answer, so say so.
+        const scan = serverCaps.vision;
+        fallback.querySelectorAll('[data-fb="scan"]').forEach(el => { el.style.display = scan ? '' : 'none'; });
+        fallback.querySelectorAll('[data-fb="type"]').forEach(el => { el.style.display = scan ? 'none' : ''; });
+        const manual = document.getElementById('chart-manual');
+        if (manual) {
+          manual.className = 'btn btn-sm ' + (scan ? 'btn-ghost' : 'btn-primary');
+          manual.textContent = scan ? 'Type it in instead' : 'Type in the size chart';
+        }
+        fallback.style.display = 'block';
+      };
       if (fallback) fallback.style.display = 'none';
       fetchBtn.disabled = true;
       fetchBtn.textContent = 'Reading…';
@@ -2134,21 +2296,25 @@
     // reflect the age of the evidence, not just how much of it there is.
     const stale = Staleness.check(measuredAt);
 
+    // Numbers that were estimated rather than measured cost confidence too.
+    const est = estimateOf(body);
+    const engineOpts = { easeBias, confidencePenalty: stale.penalty, estimatePenalty: est.penalty };
+
     // sex picks the size chart — women's and men's are cut to different bodies
-    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex,
-                                     { easeBias, confidencePenalty: stale.penalty });
+    const result = FitEngine.analyze(wiz.garmentType, body, wiz.fitPref, wiz.pickedSize || null, chart, sex, engineOpts);
     if (!result) { toast('Could not analyze this garment.', 'err'); return; }
     if (typeof FitFeedback !== 'undefined') {
       result.calibrationNote = FitFeedback.explain(wiz.garmentType);
     }
     result.staleNotice = stale.notice;
     result.staleBand = stale.band;
+    result.estimateNotice = est.notice;
 
     /* The headline sentence is derived by running the wearer against
        both the standard and the brand chart, so it can never contradict
        the size recommended beside it. */
     if (brandChart && typeof Brands !== 'undefined') {
-      const cmp = Brands.compare(wiz.garmentType, body, wiz.fitPref, sex, wiz.brandId);
+      const cmp = Brands.compare(wiz.garmentType, body, wiz.fitPref, sex, wiz.brandId, engineOpts);
       if (cmp) {
         result.brandCompare = { line: cmp.line, shift: cmp.shift, standardSize: cmp.standardSize };
         result.brandConfidence = cmp.confidence;
@@ -2395,6 +2561,11 @@
           <div class="stale-note tone-${esc(r.staleBand === 'stale' ? 'bad' : 'warn')}">
             <span>${esc(r.staleNotice)}</span>
             <a class="btn btn-secondary btn-sm" href="#/${Auth.user() ? 'profiles' : 'analyze'}">Re-measure</a>
+          </div>` : ''}
+        ${r.estimateNotice ? `
+          <div class="stale-note tone-warn">
+            <span>${esc(r.estimateNotice)}</span>
+            <a class="btn btn-secondary btn-sm" href="#/${Auth.user() ? 'profiles' : 'analyze'}">Measure</a>
           </div>` : ''}
       </div>
 
@@ -3302,10 +3473,11 @@
     const parts = [];
     if (r.brandConfidence) {
       parts.push(esc(r.brandConfidence.label));
-    } else if ((r.confidence + (r.stalePenalty || 0)) < 80) {
+    } else if ((r.confidence + (r.stalePenalty || 0) + (r.estimatePenalty || 0)) < 80) {
       parts.push('add more measurements to raise this');
     }
     if (r.stalePenalty) parts.push(`${r.stalePenalty} off for the age of your measurements`);
+    if (r.estimatePenalty) parts.push(`${r.estimatePenalty} off because some numbers are estimates`);
     return parts.length ? ' · ' + parts.join(' · ') : '';
   }
 
@@ -3615,7 +3787,7 @@
       <div class="outfit-ai">
         <div class="outfit-ai-head">
           <span class="score-pill ${scorePillClass(p.ai.score)}">${p.ai.score}/100</span>
-          <strong class="small">AI style rating</strong>
+          <strong class="small">Style rating</strong>
         </div>
         ${notes.map(t => `<div class="outfit-note">${esc(t)}</div>`).join('')}
       </div>`;
@@ -3664,7 +3836,7 @@
         box.innerHTML = `
           <div class="outfit-ai-head">
             <span class="score-pill ${scorePillClass(res.score)}">${res.score}/100</span>
-            <strong class="small">AI style rating</strong>
+            <strong class="small">Style rating</strong>
           </div>
           ${res.notes.slice(0, 2).map(t => `<div class="outfit-note">${esc(t)}</div>`).join('')}`;
       });
@@ -3752,7 +3924,7 @@
       <div id="battle-slot"></div>
       <div class="card">
         <h2 class="mb-8">Outfit ideas</h2>
-        <p class="muted small mb-16">Real outfits from the community. Give a look a like or dislike, and see the AI's style score out of 100 with the reasons why. Every post is reviewed by a human before it appears here.</p>
+        <p class="muted small mb-16">Real outfits from the community. Give a look a like or dislike, and see its colour-and-style score out of 100 with the reasons why. Every post is reviewed by a human before it appears here.</p>
         <button class="btn btn-primary" id="of-post">Share your outfit</button>
         <a href="terms.html" target="_blank" rel="noopener" class="muted small" style="margin-left:14px;text-decoration:underline">Community Guidelines</a>
       </div>
@@ -4371,7 +4543,7 @@
       <div class="card">
         <div class="card-title">Did they fit?</div>
         ${unanswered.length ? `
-          <p class="muted small mb-8">Telling FitCheck what happened is the only thing that turns a guess into your own record.</p>
+          <p class="muted small mb-8">Telling FitChecker what happened is the only thing that turns a guess into your own record.</p>
           ${unanswered.map(e => `
             <div class="fh-row" data-fh="${esc(e.id)}">
               <div class="fh-main">
@@ -4397,7 +4569,7 @@
     const rows = Object.keys(byBrand).map(id => Returns.yourRecord(id)).filter(Boolean);
     if (!rows.length) {
       const kept = answered.filter(e => e.outcome === 'kept').length;
-      return `<p class="small">${kept} of ${answered.length} kept so far. Log a couple more and FitCheck can start showing your record per brand.</p>`;
+      return `<p class="small">${kept} of ${answered.length} kept so far. Log a couple more and FitChecker can start showing your record per brand.</p>`;
     }
     return Object.keys(byBrand).map(id => {
       const rec = Returns.yourRecord(id);
@@ -4430,8 +4602,8 @@
           <div class="card-title">Progress</div>
           <div class="empty">
             <div class="empty-icon">📈</div>
-            <p><strong>No body scans yet.</strong></p>
-            <p class="muted">Run the AI body scan on a profile and every scan is saved here — so you can watch your measurements change as you train, cut or bulk.</p>
+            <p><strong>No photo estimates yet.</strong></p>
+            <p class="muted">Run a photo estimate on a profile and every one is saved here — so you can watch your measurements change as you train, cut or bulk.</p>
             <a class="btn btn-primary" href="#/profiles">Go to my measurements</a>
           </div>
         </div>`;
@@ -4600,7 +4772,7 @@
           <p class="muted">Photograph everything you own — FitChecker cuts each piece out and keeps your whole closet on your phone. Then:</p>
           <ul class="wh-list">
             <li>👕 <span>Mix & match outfits without trying anything on</span></li>
-            <li>🤖 <span>AI rates the combo and finds gaps to fill</span></li>
+            <li>🤖 <span>Rates each combo's colours and finds gaps to fill</span></li>
             <li>⚔️ <span>Post your fits to battles & the Outfits feed</span></li>
             <li>💸 <span>Clear out what you don't wear — sell it in two taps</span></li>
           </ul>
@@ -4662,7 +4834,7 @@
       ${Money.bannerHTML('wardrobe')}`;
 
     const addBtn = document.getElementById('ward-add');
-    if (addBtn) addBtn.onclick = () => { if (requirePro('Add to your wardrobe', 'The digital wardrobe is a Pro feature — unlimited items, outfit builder and AI outfit ratings, all stored on your device.')) openAddItem(owner); };
+    if (addBtn) addBtn.onclick = () => { if (requirePro('Add to your wardrobe', 'The digital wardrobe is a Pro feature — unlimited items, outfit builder and outfit ratings, all stored on your device.')) openAddItem(owner); };
     const buildBtn = document.getElementById('ward-build');
     if (buildBtn) buildBtn.onclick = () => { if (requirePro('Build an outfit', 'Mixing and matching your closet into saved outfits is part of Pro.')) startOutfitBuilder(owner, items); };
     view.querySelectorAll('[data-item]').forEach(b => b.onclick = () => openItemDetail(owner, b.getAttribute('data-item')));
@@ -5116,7 +5288,7 @@
 
   function renderMore() {
     const items = [
-      { route: 'wardrobe', label: 'My Wardrobe', sub: 'Your closet · build & save outfits · ✦ Pro',
+      { route: 'wardrobe', label: 'My Wardrobe', sub: 'Your closet · build & save outfits' + proTag(),
         icon: '<path d="M12 3v7"/><path d="M12 10 5 13.5V20h14v-6.5L12 10Z"/><path d="M12 10c-2 0-3.2-1-3.2-2.4A2.2 2.2 0 0 1 11 5.4"/>' },
       { route: 'style', label: 'My style', sub: getStyle().done ? esc(StyleProfile.summary(getStyle())) : 'Female or male, style niches and budget',
         icon: '<path d="M8 3 4 6l2 3 1.5-1V19h9V8L18 9l2-3-4-3c-.8 1.2-2.2 2-4 2s-3.2-.8-4-2Z"/>' },
@@ -5130,9 +5302,9 @@
         icon: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M13 9h5M13 12.5h5M6 15.5h8"/>' },
       { route: 'history', label: 'History', sub: 'Your past fit checks',
         icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>' },
-      { route: 'progress', label: 'Progress', sub: 'Body scans over time · ✦ Pro',
+      { route: 'progress', label: 'Progress', sub: 'Photo estimates over time' + proTag(), feature: 'progress',
         icon: '<path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/><path d="M18 7h1v1"/>' },
-      { route: 'colours', label: 'Colours', sub: 'Your seasonal palette',
+      { route: 'colours', label: 'Colours', sub: 'Your seasonal palette', feature: 'colours',
         icon: '<path d="M12 3a9 9 0 0 0 0 18 3 3 0 0 0 0-6 2 2 0 0 1 0-4h1.5a4.5 4.5 0 0 0 4.5-4.5C18 3.9 15.3 3 12 3Z"/>' },
       { route: 'settings', label: 'Settings', sub: 'Units, language, account',
         icon: '<path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.5"/><circle cx="8" cy="16" r="2.5"/>' },
@@ -5144,7 +5316,7 @@
       <div class="card">
         <div class="card-title">More</div>
         <div class="menu-list">
-          ${items.map(it => `
+          ${items.filter(it => !it.feature || feature(it.feature)).map(it => `
             <a class="menu-row" href="#/${it.route}">
               <span class="menu-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${it.icon}</svg></span>
               <span class="menu-text"><span class="menu-label">${it.label}</span><span class="menu-sub">${it.sub}</span></span>
@@ -5218,17 +5390,6 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">For you</div>
-        <a class="list-row" href="#/dashboard">
-          <span class="row-thumb">📊</span>
-          <span class="row-main">
-            <span class="title">Analytics</span>
-            <span class="sub">See which fit preferences and colours matter most to our users</span>
-          </span>
-          <span class="rec-arrow">→</span>
-        </a>
-      </div>
 
       <div class="card">
         <div class="card-title">Install FitChecker</div>

@@ -8,20 +8,35 @@
    consumer and starve the dataset. */
 
 window.APP_CONFIG = {
-  id:     'fitcheck',
-  name:   'FitCheck',
+  id:     'fitcheck',     // storage-key prefix — never rename, it would orphan saved data
+  name:   'FitChecker',
   accent: '#b86436',
   icon:   'icons/icon-192.png',
 
   backend: { url: '', anonKey: '' },
+
+  /* Screens that stay out of the nav, home and More until they have
+     something in them. An empty community feed in the main tab bar
+     tells every new user nobody else is here. The routes still work,
+     so flipping one back on is all it takes (community also needs its
+     Outfits tab restored in index.html's nav). */
+  features: {
+    community: false,   // Outfits feed + Outfit Battle
+    progress:  false,   // body-scan trend over time
+    colours:   false    // seasonal colour palette
+  },
 
   trialDays: 3,
   listEndpoint: '',
   adClient: '',
 
   money: {
+    /* No paid tier until checkout is wired AND purchases are confirmed
+       server-side. With paid:false every Pro feature is open and no
+       price, trial, daily meter, lock or ad is shown. See monetize.js. */
+    paid: false,
     noun: 'check', nounPlural: 'checks',
-    proName: 'FitCheck Pro',
+    proName: 'FitChecker Pro',
     freePerDay: 5,
     perks: [
       'Fit verdict on any item, at any brand',
@@ -30,9 +45,9 @@ window.APP_CONFIG = {
       'Full wardrobe history & no ads ✦'
     ],
     plans: {
-      annual:    { id: 'annual',    label: 'Annual',     price: '$24.99', period: 'year',  note: 'Just $2.08/mo — best value', save: 'Save 58%' },
-      monthly:   { id: 'monthly',   label: 'Monthly',    price: '$4.99',  period: 'month', note: 'Cancel anytime' },
-      allaccess: { id: 'allaccess', label: 'All Access', price: '$9.99',  period: 'month', note: 'Unlocks all six apps with one login' }
+      annual:    { id: 'annual',    label: 'Annual',     price: '€24.99', period: 'year',  note: 'Just €2.08/mo — best value', save: 'Save 58%' },
+      monthly:   { id: 'monthly',   label: 'Monthly',    price: '€4.99',  period: 'month', note: 'Cancel anytime' },
+      allaccess: { id: 'allaccess', label: 'All Access', price: '€9.99',  period: 'month', note: 'Unlocks all six apps with one login' }
     },
     defaultPlan: 'annual',
     checkout: { annual: '', monthly: '', allaccess: '' },

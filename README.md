@@ -50,6 +50,7 @@ then open **http://localhost:8000** in your browser. `server.py` (Python 3, no d
 | **Brand reputation** | Fit reports are also shared anonymously — brand, garment, size and outcome, nothing else — so "this brand runs small" becomes a fact instead of a rumour. |
 | **Second-hand check** | Paste any Vinted / Depop / eBay / Grailed listing. It reads the seller's own measurements out of the free text — "pit to pit 56cm, length 68cm" — doubles the flat ones into real garment girths, and answers the only question that matters when there are no returns: will *this* garment fit *you*. |
 | **Proven by your closet** | Every wardrobe item records its brand and the size on the label, so the Size Passport can show the sizes you have actually proved fit — grouped per brand and per top/bottom/outerwear, with worn garments counting for more than unworn ones. It also flags brands that sold you two different sizes. |
+| **No tape? Start from a size you wear** | "I'm an M at H&M" is a measurement: that brand's M is cut for one body. Pick the brand and size and FitChecker fills in chest, waist and hips from that brand's chart (`js/quickstart.js`). The numbers are marked as estimates: they cost 20 confidence points, the verdict says a tape would sharpen it, and the mark survives saving and sync until you type real numbers over it. The photo estimate is marked the same way. |
 | **Measurements that expire** | Bodies move, and a verdict computed from two-year-old numbers used to claim exactly the same confidence as one computed from today's. Measurements now carry the date they were taken, their age comes off the confidence score (nothing under six months, capped at 25 points so old numbers are never treated as worthless), the result says plainly how old they are, and a re-measure reminder is scheduled twice a year. |
 | **Fit map** | A body silhouette colored by zone so you see problem areas at a glance. |
 | **History** | Every fit check is saved to your account — reopen any past verdict. |
@@ -107,7 +108,9 @@ FitChecker/
 
 - Fit verdicts come from **measurement math against standard size charts**, not from AI image analysis — the photos personalize your profile and results view, but the numbers do the judging. Real brands vary; when a brand publishes its own size chart, trust that too.
 - The **generic size ladder is a national-average approximation**, so its confidence is capped at 90%. A chart scraped from the brand's own page is the only ground truth and scores higher.
-- The **size-guide reader only sees server-rendered HTML tables.** Charts drawn by JavaScript can't be read — paste the size-guide page itself for the best result.
+- The **size-guide reader only sees server-rendered HTML tables — and most big EU shops block it.** Tested 2026-09-24: H&M, Levi's, Weekday, Zalando and Gildan returned 403, Uniqlo 503, and Gant, Boozt and Patagonia draw their charts with JavaScript. When it fails, the app offers "type in the size chart". The screenshot reader is only offered when the server has `GEMINI_API_KEY` set (`/api/capabilities`).
+- **Brand offsets in `js/brands.js` are modelled, not measured** — reputation turned into centimetres. The app labels them "our estimate" and takes confidence off; only a transcribed chart (`confidence: 'published'`) is treated as fact.
+- The **photo estimate (`js/body-scan.js`) is classic pixel vision, not machine learning**, and has never been checked against tape measurements of real people. It's labelled an estimate for that reason.
 - **Local accounts (`js/auth.js`) are per-device.** Logging in elsewhere needs a linked cloud account (`js/cloud.js`).
 - A "virtual try-on" render (your photo wearing the garment) requires a generative-AI backend and is out of scope.
 

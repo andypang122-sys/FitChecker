@@ -1,6 +1,10 @@
 'use strict';
 /* ============================================================
-   BodyScan — AI body measurement from two photos.
+   BodyScan — a body-measurement ESTIMATE from two photos.
+
+   Not machine learning: classic pixel vision (below). It has never
+   been checked against tape measurements of real people, so the UI
+   calls it an estimate and the verdict takes confidence off for it.
 
    The user enters their height (the calibration ruler), then
    takes/uploads a FRONT photo and a SIDE photo. Everything runs
@@ -428,7 +432,7 @@ const BodyScan = (() => {
   }
 
   /* ==========================================================
-     RESULT OVERLAY — the photo with the AI's landmarks drawn on
+     RESULT OVERLAY — the photo with the detected landmarks drawn on
      ========================================================== */
 
   function drawOverlay(canvas, workCanvas, m, front, values) {
@@ -512,7 +516,7 @@ const BodyScan = (() => {
     const root = document.getElementById('modal-root');
     S.overlay = document.createElement('div');
     S.overlay.className = 'modal-overlay';
-    S.overlay.innerHTML = '<div class="modal scan-modal" role="dialog" aria-label="AI body scan"></div>';
+    S.overlay.innerHTML = '<div class="modal scan-modal" role="dialog" aria-label="Photo estimate"></div>';
     root.appendChild(S.overlay);
     S.box = S.overlay.querySelector('.scan-modal');
     renderHeight();
@@ -535,8 +539,8 @@ const BodyScan = (() => {
 
   function renderHeight() {
     S.box.innerHTML = `
-      <h3>AI body scan</h3>
-      <p>Two photos and your height — the AI does the tape measure's job. Photos are analysed on your device and never leave it.</p>
+      <h3>Photo estimate</h3>
+      <p>Two photos and your height give a starting estimate of your measurements. It can be several cm out — a tape is always more accurate. Photos are analysed on your device and never leave it.</p>
       <div class="field">
         <label for="scan-height">Your height <span class="req">*</span></label>
         <span class="input-suffix">
@@ -682,7 +686,7 @@ const BodyScan = (() => {
 
     S.box.innerHTML = `
       <h3>Your measurements</h3>
-      <p>Here's what the AI found. Numbers land in the form next — fine-tune anything that looks off.</p>
+      <p>Here's the estimate. The numbers land in the form next — fine-tune anything you know.</p>
       <canvas class="scan-canvas" id="scan-canvas"></canvas>
       <div class="scan-rows">${rows}</div>
       ${notes}
